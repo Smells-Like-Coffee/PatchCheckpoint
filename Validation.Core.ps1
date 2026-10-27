@@ -193,6 +193,33 @@ function ConvertTo-SafeCsvRow {
 
 function Get-ValidationColumns { (New-ValidationRow '').PSObject.Properties.Name }
 
+# A presentation export contains only the current table view, never verification
+# tracking. Escape formula-like text before opening the snapshot in a spreadsheet.
+function Save-StatusCsv {
+    param([string]$Path, [string[]]$Columns, [object[]]$Rows)
+    $temp = Join-Path ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Path))) ([IO.Path]::GetRandomFileName())
+    try {
+        if ($Rows.Count) {
+            $Rows | ForEach-Object {
+                $values = [ordered]@{}
+                foreach ($column in $Columns) {
+                    $value = [string]$_.$column
+                    if ($value -match '^\s*[=+@-]') { $value = "'" + $value }
+                    $values[$column] = $value
+                }
+                [pscustomobject]$values
+            } | Export-Csv -LiteralPath $temp -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
+        }
+        else {
+            $header = ($Columns | ForEach-Object { '"' + $_.Replace('"','""') + '"' }) -join ','
+            [IO.File]::WriteAllText($temp,($header + "`r`n"),[Text.UTF8Encoding]::new($true))
+        }
+        if ([IO.File]::Exists($Path)) { [IO.File]::Replace($temp,$Path,($Path + '.bak'),$true) }
+        else { [IO.File]::Move($temp,$Path) }
+    }
+    finally { if ([IO.File]::Exists($temp)) { [IO.File]::Delete($temp) } }
+}
+
 # Save each CSV through a same-directory temporary file. File.Replace preserves
 # an existing destination atomically and creates a backup. Reports are independently
 # atomic; they are NOT a cross-file transaction. Finished is saved first so a newly

@@ -1,4 +1,4 @@
-# Server Update Validation 1.0.6
+# Server Update Validation 1.0.7
 
 Windows desktop tool for post-monthly-reboot assessment using SCCM client data. Computers
 are assumed to have SCCM installed, to have recently rebooted, and to respond to ping.
@@ -11,7 +11,7 @@ complete Windows update inventory or an application-health assessment.
 
 Download the packaged ZIP and matching checksum from this repository's **Releases**
 page, or clone the repository and keep the source files together. The current
-version is **1.0.6**. The user has reported a successful live pilot; compatibility
+version is **1.0.7**. The user has reported a successful live pilot of 1.0.6; compatibility
 with other SCCM client versions and environments still requires validation.
 
 ## Start here
@@ -43,6 +43,11 @@ Starting another wave updates the selected CSVs automatically, without an existi
 confirmation prompt. Finished PASS results accumulate and unfinished output contains
 the current outstanding results. This is latest-state reporting, not a separate history
 of every wave. Automatic .bak snapshots are still retained.
+
+To update an existing installation, finish or gracefully stop the wave and close
+the application. Replace the program files in the existing working folder with
+the new distribution. Keep Validation-Session.json and your operational CSVs;
+the report schema remains compatible. Relaunch and enter credentials again.
 
 Example input (also supplied as Computers.example.csv):
 
@@ -117,12 +122,47 @@ Windows version and desktop theme. UI.Theme.ps1 must remain with the other scrip
   and starts no workers. New list explicitly begins another assessment cycle.
 - Scrollable, sortable results grid with status filter, name search, and a selected
   row detail panel showing the report fields and diagnostic evidence.
+- **Unfinished** is the default status filter. Switch to PASS or All as needed.
+- **Export CSV** opens a Save dialog and exports a snapshot of the filtered and
+  searched table, in its current sort order. It contains exactly Computer, Status,
+  Reason / current step, Updates, Reboot, and Last checked (UTC). Full reason text
+  is retained even when the displayed cell is truncated. The details pane and
+  internal tracking fields are excluded. An empty view exports headers only.
+  Export runs in the background and cannot overwrite the campaign input, reports,
+  or session files. Display exports are for reporting, not next-wave input.
 - Progress distinguishes assessed, running, and queued computers. Assessed does not
   mean PASS. A completed wave can still have many unfinished computers.
 - Stop after active checks: no new dispatch; active workers finish and queued rows
   remain in unfinished output. Closing during a wave offers the same graceful stop.
 - A query has an overall 180-second timeout by default. Cancellation is requested
   asynchronously; underlying WinRM/.NET cancellation can add cleanup time.
+
+## Responsiveness and concurrency
+
+Remote queries run in bounded worker runspaces. In 1.0.7, tracking report writes
+also run in a dedicated background runspace, with only one report writer active.
+The UI copies a snapshot and continues processing input while CSV/JSON conversion
+and disk writes complete. Dispatch intents are batched; their checkpoint must
+finish before the corresponding computers are assessed. A wave remains active
+until its final results have been saved. The footer shows checkpoint activity.
+
+Result processing and worker launches are limited per UI timer tick. Summary
+updates are throttled, status counts use one pass over the list, and bulk list
+loads suppress repeated binding events. Initial CSV parsing and table snapshot
+capture still occur on the UI thread; this is not a hard real-time interface.
+
+CPU utilization is not a target percentage. Remote query latency, endpoint/client
+performance, report size, and storage latency can limit throughput while the local
+machine has spare CPU. Use writable local report storage where practical. Start
+with concurrency 8, then compare representative waves at 12 and 16 if appropriate
+for your environment; watch timeouts and endpoint load rather than CPU alone.
+Increasing process priority or simply packaging the same script as an EXE does
+not remove UI-thread work or remote waits. There is no EXE build in this release.
+
+Microsoft's [Windows Forms threading guidance](https://learn.microsoft.com/en-us/dotnet/desktop/winforms/controls/multithreading-in-windows-forms-controls)
+explains why time-consuming work belongs off the UI thread. Actual improvements
+in your estate still need a live comparison; synthetic responsiveness tests do
+not establish production throughput.
 
 ## Status meanings
 
@@ -219,9 +259,12 @@ that a timer, a zero trigger return code, or empty query output proves completio
   not present in the current input are retained with their original timestamps.
 - **Unfinished CSV contains everything else**, including queued rows after stopping.
   Reuse it without deleting tracking columns. Sorting/filtering the GUI does not
-  change which computers are assessed or exported.
-- Existing outputs receive a `.bak` snapshot. Every assessment updates the reports
-  through temporary files and atomic replacement per file. The pair is not a single
+  change which computers are assessed or saved to tracking reports. Export CSV
+  follows the current GUI filter/search/sort instead.
+- Existing outputs receive a `.bak` snapshot. Assessment results are checkpointed
+  in background batches through temporary files and atomic replacement per file.
+  The visible table can briefly be ahead of the tracking CSVs while a save is busy;
+  wave completion waits for the final save. The pair is not a single
   transaction: finished is written first, and an interruption can leave a duplicate
   computer across reports. Use timestamps and .bak files during recovery.
 - Empty reports contain headers. An empty unfinished report means no computers in

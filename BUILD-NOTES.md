@@ -1,4 +1,22 @@
-# Build 1.0.6 - 2026-10-27
+# Build 1.0.7 - 2026-10-27
+
+## Changes from 1.0.6
+
+- Added Export CSV for the filtered/searched/sorted Computer status table only.
+  Export captures a point-in-time snapshot and writes it in the background, with
+  spreadsheet formula escaping and protection against overwriting campaign files.
+- Made Unfinished the default filter.
+- Moved tracking CSV conversion and writes to one background runspace. Batched
+  dispatch intents must be saved before remote work starts. Snapshot data is copied;
+  background writers never access GUI controls or live mutable row collections.
+- Limited result processing/worker launches per timer tick, throttled summaries,
+  counted statuses in one pass, and suppressed bulk binding notifications.
+- A completed wave waits for the final checkpoint. Stopping during a checkpoint
+  cancels undispatched work. Background report failures stop dispatch, drain active
+  work, expose the error, and prevent unsafe continuation until recovery.
+- Extended tests for display export, default filtering, GUI heartbeat while saves
+  are deliberately delayed, checkpoint dispatch barriers, stopped staged work,
+  a 500-computer synthetic checkpoint, and a failing background report writer.
 
 ## Changes from 1.0.5
 
@@ -103,7 +121,7 @@ does not include the earlier deleted prototype.
 
 Executed under Windows PowerShell 5.1 on Windows:
 
-- 50 core assertions: scan baselines, boot/catalog changes, malformed/missing evidence,
+- 56 core assertions: scan baselines, boot/catalog changes, malformed/missing evidence,
   formula escaping, CSV round trips, PASS accumulation/removal, header-only output,
   snapshots, duplicate/IP rejection, and exclusive file locks.
   Includes requested timestamp format, UTC conversion, exact-value round trips,

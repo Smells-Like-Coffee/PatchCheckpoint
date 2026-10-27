@@ -12,7 +12,7 @@ $testRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $script:testFolder = Join-Path $testRoot ('UI-Test-' + [guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($script:testFolder)
 function Wait-DemoWave {
-    $deadline = [datetime]::UtcNow.AddSeconds(30)
+    $deadline = [datetime]::UtcNow.AddSeconds(60)
     while ($script:app.Running -and [datetime]::UtcNow -lt $deadline) {
         Invoke-AppTick
         [Windows.Forms.Application]::DoEvents()
@@ -21,12 +21,26 @@ function Wait-DemoWave {
     }
     if ($script:app.Running -or $script:app.FatalSave) { throw 'Demo wave failed to complete.' }
 }
+function Wait-StatusExport {
+    $deadline = [datetime]::UtcNow.AddSeconds(20)
+    while ($script:app.ExportJob -and [datetime]::UtcNow -lt $deadline) {
+        Invoke-AppTick; [Windows.Forms.Application]::DoEvents(); [Threading.Thread]::Sleep(25)
+    }
+    if ($script:app.ExportJob -or $script:app.ExportNotice -eq 'Export failed') { throw 'Status export failed to finish.' }
+}
 function Invoke-InterfaceSmoke {
     $script:app.SessionPath = Join-Path $script:testFolder 'Test-Session.json'
     $script:finishedPath.Box.Text = Join-Path $script:testFolder 'Finished.csv'
     $script:unfinishedPath.Box.Text = Join-Path $script:testFolder 'Unfinished.csv'
     $script:concurrency.Value = 2
     $script:form.Show()
+    if ($script:filter.Text -ne 'Unfinished' -or $script:binding.Filter -ne "Status <> 'PASS'") { throw 'Unfinished must be the active default view.' }
+    # Deliberately slow only the background writer. A separate GUI timer must
+    # keep ticking while saves run, and no remote worker may bypass its checkpoint.
+    $script:app.Helpers += "`r`nfunction Save-TestWaveReports {`r`n" + (Get-Command Save-WaveReports).Definition + "`r`n}`r`nfunction Save-WaveReports { param(`$Rows,`$Finished,`$FinishedPath,`$UnfinishedPath) [Threading.Thread]::Sleep(250); Save-TestWaveReports `$Rows `$Finished `$FinishedPath `$UnfinishedPath }"
+    $script:heartbeatCount = 0
+    $script:heartbeat = [Windows.Forms.Timer]::new(); $script:heartbeat.Interval = 50
+    $script:heartbeat.Add_Tick({ $script:heartbeatCount++ }); $script:heartbeat.Start()
     if ($script:startButton.GetType().FullName -ne 'ValidationUI.ActionButton' -or -not $script:startButton.Primary) { throw 'Primary action theme is missing.' }
     if ($script:progress.GetType().FullName -ne 'ValidationUI.BlueProgress') { throw 'Blue progress theme is missing.' }
     if ($script:grid.Parent -ne $script:resultsCard -or $script:inputPath.Box.Parent -ne $script:setupCard) { throw 'Card grouping is missing.' }
@@ -39,6 +53,7 @@ function Invoke-InterfaceSmoke {
     Write-Output 'PASS: themed controls, card grouping, and minimum-window layout'
     Start-AppWave
     Invoke-AppTick
+    if (-not $script:app.ReportJob -or $script:app.Workers.Count -ne 0) { throw 'Dispatch must wait for its background checkpoint.' }
     # Render the real controls, not a generated UI mockup.
     [Windows.Forms.Application]::DoEvents()
     $bitmap = [Drawing.Bitmap]::new($script:form.Width,$script:form.Height)
@@ -67,6 +82,32 @@ function Invoke-InterfaceSmoke {
     if ($csvRows[0].UpdateScope -ne 'Software Center-visible SCCM updates' -or $csvRows[0].MissingCount -ne '0') { throw 'Report does not use Software Center-visible scope.' }
     if ($csvRows[0].PSObject.Properties.Name -contains 'UpdateStoreMissingCount') { throw 'Broader store fields must not appear in reports.' }
     Write-Output 'PASS: second-wave verification, same-file updates without prompts, formatted timestamps'
+    if ($script:binding.Count -ne 8) { throw 'Default unfinished view must hide the four PASS results.' }
+    if ($script:heartbeatCount -lt 10) { throw 'UI message loop did not stay active during background saves.' }
+    if ($script:app.Checkpoints -ge 24) { throw 'Checkpoints were not batched.' }
+    Write-Output 'PASS: GUI heartbeat during delayed report writes, durable dispatch barrier, and batched checkpoints'
+
+    $script:filter.SelectedItem = 'PASS'
+    $script:binding.Sort = 'Computer DESC'
+    $expectedNames = @($script:binding.List | ForEach-Object { $_.Row['Computer'] })
+    $statusPath = Join-Path $script:testFolder 'Status.csv'
+    Start-StatusExport $statusPath
+    $script:filter.SelectedItem = 'Unfinished'
+    Wait-StatusExport
+    $statusRows = @(Import-Csv -LiteralPath $statusPath)
+    if ($statusRows.Count -ne 4 -or ($statusRows.Computer -join '|') -ne ($expectedNames -join '|')) { throw 'Export must capture the selected filter and sort order at click time.' }
+    if (($statusRows[0].PSObject.Properties.Name -join '|') -ne 'Computer|Status|Reason / current step|Updates|Reboot|Last checked (UTC)') { throw 'Status export must contain only displayed table columns.' }
+    $script:filter.SelectedItem = 'PASS'; $script:search.Text = $expectedNames[0]
+    Start-StatusExport $statusPath; Wait-StatusExport
+    if (@(Import-Csv -LiteralPath $statusPath).Count -ne 1) { throw 'Export must honor search text.' }
+    $script:search.Text = 'NO-SUCH-COMPUTER'
+    Start-StatusExport $statusPath; Wait-StatusExport
+    if (@(Import-Csv -LiteralPath $statusPath).Count) { throw 'Empty filtered view must export headers only.' }
+    $blocked = $false
+    try { Start-StatusExport $script:app.UnfinishedPath } catch { $blocked = $true }
+    if (-not $blocked) { throw 'Display exports must not overwrite tracking reports.' }
+    $script:search.Clear(); $script:filter.SelectedItem = 'Unfinished'; $script:binding.Sort = ''
+    Write-Output 'PASS: filtered/sorted snapshot export, search, empty view, and tracking-file protection'
 
     # Simulate reopening the application with only its saved local settings.
     $script:app.CampaignStarted = $false; $script:app.Rows = @(); $script:app.Finished = @{}
@@ -95,11 +136,62 @@ function Invoke-InterfaceSmoke {
     $script:inputPath.Box.Text = Join-Path $testRoot 'Computers.example.csv'
     $script:finishedPath.Box.Text = Join-Path $script:testFolder 'Finished-stop.csv'
     $script:unfinishedPath.Box.Text = Join-Path $script:testFolder 'Unfinished-stop.csv'
-    Start-AppWave; Invoke-AppTick
+    Start-AppWave
+    $deadline = [datetime]::UtcNow.AddSeconds(15)
+    while ($script:app.Workers.Count -lt 2 -and [datetime]::UtcNow -lt $deadline) {
+        Invoke-AppTick; [Windows.Forms.Application]::DoEvents(); [Threading.Thread]::Sleep(25)
+    }
+    if ($script:app.Workers.Count -ne 2) { throw 'Stop test failed to start two active workers.' }
     $script:app.Stopping = $true
     Wait-DemoWave
     if ($script:app.Done -ne 2 -or @($script:app.Rows | Where-Object Status -eq 'QUEUED').Count -ne 10) { throw 'Graceful stop did not retain queued computers.' }
     Write-Output 'PASS: graceful stop finishes active workers and preserves queued rows'
+    Reset-AppCampaign
+    Start-AppWave; Invoke-AppTick
+    $script:app.Stopping = $true
+    Wait-DemoWave
+    if ($script:app.Done -ne 0 -or @($script:app.Rows | Where-Object Status -eq 'QUEUED').Count -ne 12) { throw 'Stopping during a checkpoint must cancel undispatched work safely.' }
+    Write-Output 'PASS: stop during checkpoint cancels staged dispatch and preserves original tracking'
+
+    # A larger synthetic list exercises copying/checkpointing without contacting
+    # endpoints. Stop before dispatch, while the background report writer is busy.
+    Reset-AppCampaign
+    $scaleInput = Join-Path $script:testFolder 'Scale.csv'
+    $scaleNames = @('ComputerName') + @(1..500 | ForEach-Object { 'SCALE-{0:D4}' -f $_ })
+    [IO.File]::WriteAllLines($scaleInput,$scaleNames)
+    $script:inputPath.Box.Text = $scaleInput
+    $script:finishedPath.Box.Text = Join-Path $script:testFolder 'Scale-Finished.csv'
+    $script:unfinishedPath.Box.Text = Join-Path $script:testFolder 'Scale-Unfinished.csv'
+    Start-AppWave
+    $tickClock = [Diagnostics.Stopwatch]::StartNew()
+    Invoke-AppTick; $tickClock.Stop()
+    if (-not $script:app.ReportJob -or $script:app.Workers.Count) { throw 'Large-list checkpoint bypassed the dispatch barrier.' }
+    $heartbeatBefore = $script:heartbeatCount
+    $script:app.Stopping = $true
+    Wait-DemoWave
+    if ($script:heartbeatCount -le $heartbeatBefore -or $script:app.Rows.Count -ne 500 -or $script:app.Done) { throw 'Large-list checkpoint blocked the message loop or dispatched stopped work.' }
+    if (@(Import-Csv -LiteralPath $script:app.UnfinishedPath | Where-Object { $_.Status -ne 'QUEUED' -or $_.Verification }).Count) { throw 'Large-list stop lost original queue/tracking state.' }
+    Write-Output "PASS: 500-computer checkpoint, UI heartbeat, and safe cancellation (first tick: $($tickClock.ElapsedMilliseconds) ms)"
+
+    # Fail a background write and verify that none of the staged workers starts.
+    Reset-AppCampaign
+    $script:inputPath.Box.Text = Join-Path $testRoot 'Computers.example.csv'
+    $script:finishedPath.Box.Text = Join-Path $script:testFolder 'Error-Finished.csv'
+    $script:unfinishedPath.Box.Text = Join-Path $script:testFolder 'Error-Unfinished.csv'
+    $script:app.Helpers += "`r`nfunction Save-WaveReports { throw 'TEST: report writer failure' }"
+    $script:expectedErrors = @()
+    function Show-AppError { param([string]$Message) $script:expectedErrors += $Message }
+    Start-AppWave; Invoke-AppTick
+    $deadline = [datetime]::UtcNow.AddSeconds(20)
+    while ($script:app.Running -and [datetime]::UtcNow -lt $deadline) {
+        Invoke-AppTick; [Windows.Forms.Application]::DoEvents(); [Threading.Thread]::Sleep(25)
+    }
+    if ($script:app.Running -or -not $script:app.FatalSave -or $script:app.Done -or $script:app.Workers.Count -or -not $script:expectedErrors.Count) { throw 'Background save failure did not stop dispatch and release the wave.' }
+    $blocked = $false
+    try { Start-AppWave } catch { $blocked = $true }
+    if (-not $blocked) { throw 'A failed checkpoint must not allow another wave without recovery.' }
+    Write-Output 'PASS: background writer failure stops dispatch, reports the error, and blocks unsafe continuation'
+    $script:heartbeat.Stop(); $script:heartbeat.Dispose()
     $script:form.Hide()
     Write-Output "GUI evidence saved: $script:testFolder"
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.7 - 2026-10-27
+
+- Export CSV captures the current filtered, searched, and sorted status table.
+- Unfinished is the default computer-status filter.
+- Background report writer and batched checkpoints reduce repeated UI-thread work.
+- Dispatch still waits for durable intent; wave completion waits for the final save.
+- Bounded UI processing, throttled summary refresh, and more efficient list loading.
+- Extended GUI tests cover slow writes, 500-computer snapshots, and writer failures.
+
 ## 1.0.6 - 2026-10-27
 
 - Automatic continuation from the unfinished report after the initial wave.

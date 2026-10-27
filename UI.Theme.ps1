@@ -209,6 +209,7 @@ function Set-ValidationTheme {
     }
     $searchLabel.Text = 'Search'; $searchLabel.BackColor = [Drawing.Color]::Transparent
     $script:filter.FlatStyle = 'Flat'; $script:search.BorderStyle = 'FixedSingle'
+    $script:exportButton.Parent = $script:resultsCard; $script:exportButton.Anchor = 'Top,Left'
     $script:detail.BorderStyle = 'None'; $script:detail.BackColor = [Drawing.Color]::FromArgb(241,246,252)
     $script:detail.Font = [Drawing.Font]::new('Segoe UI',9.5)
     $script:grid.BorderStyle = 'None'; $script:grid.EnableHeadersVisualStyles = $false
@@ -286,7 +287,8 @@ function Set-ValidationThemeLayout {
     $script:badgeFlow.SetBounds(20,105,($cw - 40),32)
     $rh = $h - 514
     $script:resultsCard.SetBounds(18,470,$cw,$rh)
-    $script:filter.SetBounds(($cw - 570),14,230,28)
+    $script:exportButton.SetBounds(($cw - 690),12,110,34)
+    $script:filter.SetBounds(($cw - 560),14,220,28)
     $script:themeSearchLabel.SetBounds(($cw - 322),18,60,24)
     $script:search.SetBounds(($cw - 260),14,240,28)
     $script:grid.SetBounds(14,57,($cw - 28),($rh - 166))
@@ -297,7 +299,7 @@ function Set-ValidationThemeLayout {
 function Update-ValidationThemeSummary {
     if (-not $script:statusCountLabels) { return }
     foreach ($status in $script:statusCountLabels.Keys) {
-        $count = if ($status -eq 'PASS') { $script:app.Finished.Count } else { @($script:app.Rows | Where-Object Status -eq $status).Count }
+        $count = [int]$script:app.StatusCounts[$status]
         $script:statusCountLabels[$status].Text = "$count  $status"
     }
     $total = $script:app.Rows.Count

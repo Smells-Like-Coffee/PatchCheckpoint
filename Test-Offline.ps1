@@ -143,6 +143,18 @@ try {
     [IO.File]::WriteAllText($inputPath,"ComputerName`r`n192.168.1.10`r`n")
     $rejected = $false; try { Read-ValidationInput $inputPath | Out-Null } catch { $rejected = $true }
     Assert-Equal $rejected $true 'IP targets rejected for Kerberos workflow'
+    $statusPath = Join-Path $folder 'status.csv'
+    $columns = @('Computer','Status','Reason / current step','Updates','Reboot','Last checked (UTC)')
+    $displayRows = @([pscustomobject][ordered]@{ Computer = 'SERVER02'; Status = 'ACTION REQUIRED'; 'Reason / current step' = '=formula, with comma'; Updates = '2'; Reboot = 'No'; 'Last checked (UTC)' = '10272026 14:50:26' })
+    Save-StatusCsv $statusPath $columns $displayRows
+    $export = @(Import-Csv -LiteralPath $statusPath)
+    Assert-Equal $export.Count 1 'Status snapshot exports the supplied row count'
+    Assert-Equal ($export[0].PSObject.Properties.Name -join '|') ($columns -join '|') 'Status snapshot has exactly the six displayed headers'
+    Assert-Equal $export[0].'Reason / current step' "'=formula, with comma" 'Status export escapes formulas and preserves quoted commas'
+    Assert-Equal $export[0].'Last checked (UTC)' '10272026 14:50:26' 'Status export retains displayed timestamp format'
+    Save-StatusCsv $statusPath $columns @()
+    Assert-Equal @(Import-Csv -LiteralPath $statusPath).Count 0 'Empty status view exports a header-only CSV'
+    Assert-Equal ([IO.File]::Exists($statusPath + '.bak')) $true 'Replacing an export retains the previous snapshot'
     $lock = [IO.File]::Open(($unfinishedPath + '.lock'),'OpenOrCreate','ReadWrite','None')
     try {
         $rejected = $false
