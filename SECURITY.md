@@ -13,7 +13,8 @@ credentials to shares. Use an account with the required organizational permissio
 
 ## Remote actions
 
-Assessment reads Software Center-visible update state, reboot indicators, client
+Assessment reads Software Center-visible Windows OS/.NET patch state, strict OS
+reboot indicators (excluding PFRO/PFRO2 and unattributed SCCM flags), client
 readiness, and scan evidence. The sole remote state change is an SCCM client scan
 request through SMS_Client.TriggerSchedule, schedule 113. Existing SCCM policy can
 react independently to new scan results. The application does not install updates

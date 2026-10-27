@@ -169,9 +169,20 @@ function Set-ValidationTheme {
     $title.Font = [Drawing.Font]::new('Segoe UI',22,[Drawing.FontStyle]::Bold)
     $title.SetBounds(24,40,1000,44)
     $script:setupCard = [ValidationUI.Card]::new(); $script:form.Controls.Add($script:setupCard)
+    $script:checksCard = [ValidationUI.Card]::new(); $script:form.Controls.Add($script:checksCard)
     $script:progressCard = [ValidationUI.Card]::new(); $script:form.Controls.Add($script:progressCard)
     $script:resultsCard = [ValidationUI.Card]::new(); $script:form.Controls.Add($script:resultsCard)
     [void](New-ThemeHeading $script:setupCard 'Wave setup')
+    [void](New-ThemeHeading $script:checksCard 'Checks')
+    $script:scopeCaption = [Windows.Forms.Label]::new(); $script:scopeCaption.Text = 'OS + .NET patches | PFRO ignored'
+    $script:scopeCaption.AutoEllipsis = $true; $script:scopeCaption.Font = [Drawing.Font]::new('Segoe UI',9)
+    $script:scopeCaption.BackColor = [Drawing.Color]::Transparent; $script:checksCard.Controls.Add($script:scopeCaption)
+    $script:setupToggle = New-Button 'Collapse setup' 0 0 120
+    $script:setupToggle.Parent = $script:setupCard
+    $script:setupToggle.Add_Click({ Invoke-AppCommand 'Setup' })
+    $script:toolTips = [Windows.Forms.ToolTip]::new()
+    $script:toolTips.AutoPopDelay = 20000; $script:toolTips.InitialDelay = 400; $script:toolTips.ReshowDelay = 100
+    $script:toolTips.ShowAlways = $true
     [void](New-ThemeHeading $script:progressCard 'Progress and summary')
     $computerLabel.Parent = $script:resultsCard; $computerLabel.SetBounds(20,14,250,28)
     $computerLabel.Font = [Drawing.Font]::new('Segoe UI',13,[Drawing.FontStyle]::Bold)
@@ -181,14 +192,16 @@ function Set-ValidationTheme {
         $path.Label.BackColor = [Drawing.Color]::Transparent
         $path.Box.BorderStyle = 'FixedSingle'; $path.Box.BackColor = [Drawing.Color]::FromArgb(253,254,255)
     }
-    foreach ($c in @($script:credentialButton,$script:accountLabel,$script:concurrency,$script:loadButton,$script:reassessButton,$script:startButton,$script:stopButton,$concurrentLabel)) {
+    foreach ($c in @($script:credentialButton,$script:accountLabel,$script:concurrency,$concurrentLabel)) {
         $c.Parent = $script:setupCard; $c.Anchor = 'Top,Left'
     }
+    foreach ($c in @($script:loadButton,$script:reassessButton,$script:startButton,$script:stopButton)) { $c.Parent = $script:checksCard; $c.Anchor = 'Top,Left' }
     $script:accountLabel.BackColor = [Drawing.Color]::Transparent
     $concurrentLabel.BackColor = [Drawing.Color]::Transparent
     $script:startButton.Primary = $true; $script:startButton.Font = [Drawing.Font]::new('Segoe UI',11,[Drawing.FontStyle]::Bold)
     $script:divider = [Windows.Forms.Panel]::new(); $script:divider.BackColor = [Drawing.Color]::FromArgb(219,228,239)
     $script:setupCard.Controls.Add($script:divider)
+    $script:divider.Visible = $false
     foreach ($c in @($script:progress,$script:summary,$script:counts)) { $c.Parent = $script:progressCard; $c.Anchor = 'Top,Left' }
     $script:summary.BackColor = [Drawing.Color]::Transparent; $script:summary.Font = [Drawing.Font]::new('Segoe UI',11)
     $script:counts.Visible = $false
@@ -202,7 +215,23 @@ function Set-ValidationTheme {
         $label.Font = [Drawing.Font]::new('Segoe UI',9.5,[Drawing.FontStyle]::Bold)
         $label.ForeColor = [Drawing.ColorTranslator]::FromHtml((Get-StatusPalette $status)[1])
         $label.Margin = [Windows.Forms.Padding]::new(0,0,22,0); $label.Text = "0  $status"
+        $label.Tag = $status; $label.Cursor = [Windows.Forms.Cursors]::Hand
+        $label.AccessibleRole = 'PushButton'; $label.AccessibleName = 'Filter computers: ' + $status
+        $label.Add_Click({ param($sender,$eventArgs) Invoke-AppCommand ('Filter|' + [string]$sender.Tag) })
         $script:badgeFlow.Controls.Add($label); $script:statusCountLabels[$status] = $label
+    }
+    # Reuse a fixed set of slot controls instead of allocating controls each tick.
+    $script:workerFlow = [Windows.Forms.FlowLayoutPanel]::new()
+    $script:workerFlow.AutoScroll = $true; $script:workerFlow.WrapContents = $true
+    $script:workerFlow.BackColor = [Drawing.Color]::Transparent; $script:progressCard.Controls.Add($script:workerFlow)
+    $script:workerSlots = @{}
+    for ($slot = 1; $slot -le 32; $slot++) {
+        $panel = [Windows.Forms.Panel]::new(); $panel.Height = 38; $panel.Margin = [Windows.Forms.Padding]::new(0,0,12,4)
+        $label = [Windows.Forms.Label]::new(); $label.AutoEllipsis = $true; $label.Font = [Drawing.Font]::new('Segoe UI',9)
+        $label.SetBounds(0,0,470,22); $panel.Controls.Add($label)
+        $bar = [Windows.Forms.ProgressBar]::new(); $bar.SetBounds(0,25,470,7); $bar.Minimum = 0; $bar.Maximum = 100
+        $panel.Controls.Add($bar); $script:workerFlow.Controls.Add($panel)
+        $script:workerSlots[$slot] = [pscustomobject]@{ Panel = $panel; Label = $label; Bar = $bar }
     }
     foreach ($c in @($script:filter,$script:search,$script:grid,$script:detail,$searchLabel)) {
         $c.Parent = $script:resultsCard; $c.Anchor = 'Top,Left'
@@ -251,8 +280,8 @@ function Set-ValidationTheme {
     # Store semantic labels for the resize handler; it does not capture temporary
     # local variables through a PowerShell closure.
     $script:themeConcurrentLabel = $concurrentLabel; $script:themeSearchLabel = $searchLabel
-    $script:form.MinimumSize = [Drawing.Size]::new(1166,887)
-    $script:form.ClientSize = [Drawing.Size]::new(1320,968)
+    $script:form.MinimumSize = [Drawing.Size]::new(1166,967)
+    $script:form.ClientSize = [Drawing.Size]::new(1320,1000)
     $script:form.Add_Resize({ Set-ValidationThemeLayout })
     Set-ValidationThemeLayout
     $script:form.ResumeLayout($true)
@@ -260,34 +289,50 @@ function Set-ValidationTheme {
 
 function Set-ValidationThemeLayout {
     $w = $script:form.ClientSize.Width; $h = $script:form.ClientSize.Height; $cw = $w - 36
-    $script:setupCard.SetBounds(18,92,$cw,232)
-    $split = $cw - 392
+    $setupHeight = if ($script:app.SetupCollapsed) { 44 } else { 202 }
+    $script:setupCard.SetBounds(18,92,$cw,$setupHeight)
+    $script:setupToggle.SetBounds(($cw - 142),7,122,29)
+    $script:setupToggle.Text = if ($script:app.SetupCollapsed) { 'Expand setup' } else { 'Collapse setup' }
     $index = 0
     foreach ($path in @($script:inputPath,$script:finishedPath,$script:unfinishedPath)) {
-        $y = 49 + (42 * $index)
+        $y = 45 + (36 * $index)
         $path.Label.SetBounds(20,($y + 4),182,25)
-        $path.Box.SetBounds(205,$y,($split - 325),28)
-        $path.Button.SetBounds(($split - 108),($y - 2),92,33)
+        $path.Box.SetBounds(205,$y,($cw - 330),28)
+        $path.Button.SetBounds(($cw - 108),($y - 2),92,33)
+        foreach ($control in @($path.Label,$path.Box,$path.Button)) { $control.Visible = -not $script:app.SetupCollapsed }
         $index++
     }
-    $script:divider.SetBounds($split,44,1,156)
-    $right = $split + 24
-    $script:themeConcurrentLabel.SetBounds($right,53,175,26)
-    $script:concurrency.SetBounds(($right + 185),49,80,29)
-    $script:startButton.SetBounds($right,102,142,47)
-    $script:stopButton.SetBounds(($right + 152),102,192,47)
-    $script:loadButton.SetBounds($right,164,110,34)
-    $script:reassessButton.SetBounds(($right + 120),164,224,34)
-    $script:accountLabel.SetBounds(20,184,390,28)
-    $script:credentialButton.SetBounds(424,178,155,35)
-    $script:progressCard.SetBounds(18,338,$cw,146)
+    foreach ($control in @($script:themeConcurrentLabel,$script:concurrency,$script:accountLabel,$script:credentialButton)) { $control.Visible = -not $script:app.SetupCollapsed }
+    $script:themeConcurrentLabel.SetBounds(($cw - 315),161,175,26)
+    $script:concurrency.SetBounds(($cw - 112),157,80,29)
+    $script:accountLabel.SetBounds(20,162,390,28)
+    $script:credentialButton.SetBounds(424,154,155,35)
+    $checksY = 92 + $setupHeight + 12
+    $script:checksCard.SetBounds(18,$checksY,$cw,88)
+    $script:loadButton.SetBounds(20,42,110,34)
+    $script:startButton.SetBounds(142,42,250,34)
+    $script:startButton.Text = if ($script:app.CampaignStarted) { 'Check pending verification' } else { 'Start wave' }
+    $script:reassessButton.SetBounds(404,42,224,34)
+    $script:stopButton.SetBounds(640,42,205,34)
+    $script:scopeCaption.SetBounds(865,48,($cw - 885),25)
+    $progressHeight = if ($script:app.ShowWorkerProgress) { 206 } else { 122 }
+    $progressY = $checksY + 100
+    $script:progressCard.SetBounds(18,$progressY,$cw,$progressHeight)
     $progressWidth = [int]($cw * 0.39)
-    $script:progress.SetBounds(20,62,$progressWidth,22)
-    $script:percentLabel.SetBounds(($progressWidth + 30),60,55,28)
-    $script:summary.SetBounds(($progressWidth + 100),59,($cw - $progressWidth - 120),30)
-    $script:badgeFlow.SetBounds(20,105,($cw - 40),32)
-    $rh = $h - 542
-    $script:resultsCard.SetBounds(18,498,$cw,$rh)
+    $script:progress.SetBounds(20,50,$progressWidth,20)
+    $script:percentLabel.SetBounds(($progressWidth + 30),47,55,28)
+    $script:summary.SetBounds(($progressWidth + 100),46,($cw - $progressWidth - 120),30)
+    $script:badgeFlow.SetBounds(20,84,($cw - 40),30)
+    $script:workerFlow.Visible = $script:app.ShowWorkerProgress
+    $script:workerFlow.SetBounds(20,118,($cw - 40),80)
+    foreach ($slot in $script:workerSlots.Values) {
+        # Leave room for the vertical scrollbar as well as two panel margins.
+        $slot.Panel.Width = [int](($cw - 104) / 2)
+        $slot.Label.Width = $slot.Panel.Width; $slot.Bar.Width = $slot.Panel.Width
+    }
+    $resultsY = $progressY + $progressHeight + 12
+    $rh = $h - $resultsY - 46
+    $script:resultsCard.SetBounds(18,$resultsY,$cw,$rh)
     $script:exportButton.SetBounds(($cw - 690),12,110,34)
     $script:filter.SetBounds(($cw - 560),14,220,28)
     $script:themeSearchLabel.SetBounds(($cw - 322),18,60,24)
@@ -305,8 +350,47 @@ function Update-ValidationThemeSummary {
         $count = [int]$script:app.StatusCounts[$status]
         $script:statusCountLabels[$status].Text = "$count  $status"
     }
-    $total = $script:app.Rows.Count
+    $total = $script:app.WorkIndices.Count
     $percent = if ($total) { [int][math]::Floor(100 * $script:app.Done / $total) } else { 0 }
     $script:percentLabel.Text = "$percent%"
     $script:progress.AccessibleDescription = "$($script:app.Done) of $total assessed ($percent percent)"
+}
+
+# Percentages represent observed assessment stages, never patch installation or
+# elapsed-time guesses. Until progress arrives, a marquee honestly shows waiting.
+function Update-WorkerProgressDisplay {
+    foreach ($work in $script:app.Workers.ToArray()) {
+        foreach ($record in $work.PowerShell.Streams.Progress.ReadAll()) {
+            if ($record.RecordType -eq 'Completed') { continue }
+            $work.StepText = $record.StatusDescription
+            $work.StepPercent = $record.PercentComplete
+        }
+    }
+    if (-not $script:app.ShowWorkerProgress) { return }
+    for ($index = 1; $index -le 32; $index++) {
+        $slot = $script:workerSlots[$index]
+        $slot.Panel.Visible = $index -le [int]$script:concurrency.Value
+        if ($index -gt [int]$script:concurrency.Value) { continue }
+        $work = @($script:app.Workers | Where-Object Slot -eq $index)
+        if ($work.Count) {
+            $slot.Label.ForeColor = [Drawing.ColorTranslator]::FromHtml((Get-StatusPalette 'CHECKING')[1])
+            $active = $work[0]; $name = $script:app.Rows[$active.Index].ComputerName
+            $text = '{0}: {1} - {2} ({3}s)' -f $index,$name,$active.StepText,[int]$active.Clock.Elapsed.TotalSeconds
+            if ($active.StepPercent -lt 0) { $slot.Bar.Style = 'Marquee'; $slot.Bar.MarqueeAnimationSpeed = 30 }
+            else { $slot.Bar.Style = 'Continuous'; $slot.Bar.Value = [math]::Min(100,[math]::Max(0,$active.StepPercent)) }
+        }
+        elseif ($script:app.LastWorkerResults.ContainsKey($index)) {
+            $last = $script:app.LastWorkerResults[$index]
+            $slot.Label.ForeColor = [Drawing.ColorTranslator]::FromHtml((Get-StatusPalette $last.Status)[1])
+            $text = '{0}: {1} - completed: {2}' -f $index,$last.Name,$last.Status
+            $slot.Bar.Style = 'Continuous'; $slot.Bar.Value = 100
+        }
+        else {
+            $slot.Label.ForeColor = [Drawing.Color]::FromArgb(67,87,115)
+            $text = '{0}: {1}' -f $index,$(if ($script:app.Running) { 'Waiting for work/checkpoint' } else { 'Idle' })
+            $slot.Bar.Style = 'Continuous'; $slot.Bar.Value = 0
+        }
+        $slot.Label.Text = $text; $slot.Bar.AccessibleDescription = $text
+        $script:toolTips.SetToolTip($slot.Label,$text + '. Progress is the assessment stage, not update installation progress.')
+    }
 }

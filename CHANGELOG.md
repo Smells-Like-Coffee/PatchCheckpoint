@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0-beta.1 - 2026-10-27
+
+- Pre-1.0 beta versioning; earlier 1.0.x builds remain historical test artifacts.
+- Windows OS/.NET-only visible patch scope, with ambiguous titles requiring review.
+- Strict OS reboot signals; PFRO/PFRO2 and generic SCCM reboot flags are ignored.
+- Failure details and Yes/No/Unknown failure notes for NOT READY computers.
+- Clickable status totals, contextual tooltips, separate Checks pane, collapsible setup.
+- View-toggleable per-worker assessment stage bars and saved layout preferences.
+
 ## 1.0.8 - 2026-10-27
 
 - Native File, Actions, View, and Help menus with familiar keyboard shortcuts.

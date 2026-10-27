@@ -12,7 +12,10 @@ function New-ValidationRow {
     [pscustomobject][ordered]@{
         SchemaVersion = '4'; ComputerName = $ComputerName; Status = 'QUEUED'
         Reason = 'Waiting for a worker'; CheckedAtUtc = ''; MissingCount = ''
-        MissingUpdates = ''; UpdateScope = 'Software Center-visible SCCM updates'
+        MissingUpdates = ''; UpdateScope = 'Software Center-visible Windows OS and .NET patches'
+        RebootScope = 'Strict patching/OS; PFRO ignored'
+        VisibleUpdatesFailed = 'Unknown'; FailedUpdateCount = ''; FailedUpdates = ''
+        ScopeExcludedCount = ''; ScopeAmbiguousCount = ''; ScopeAmbiguousUpdates = ''
         RebootPending = 'Unknown'; RebootReasons = ''
         LastBootUtc = ''; UptimeMinutes = ''; ClientService = 'Unknown'
         ScanRequestedAtUtc = ''; ScanRequestBootUtc = ''; ScanBaselineJson = ''
@@ -51,16 +54,34 @@ function ConvertTo-ValidationRow {
         throw "Timestamp tracking is missing for '$($row.ComputerName)'. Retain the TrackingJson column when reusing reports."
     }
     $row.TrackingJson = ''
+    if ($InputRow.PSObject.Properties.Name -contains 'RebootPending' -and $InputRow.PSObject.Properties.Name -notcontains 'RebootScope') {
+        $row.RebootScope = 'Previous reboot scope; reassessment required'
+    }
     # Previous scopes included broad-store records or hidden deployments. Do not
     # display an old count as the number of Software Center-visible updates.
     if ($InputRow.PSObject.Properties.Name -contains 'MissingCount' -and
         ($InputRow.PSObject.Properties.Name -notcontains 'UpdateScope' -or
-         $InputRow.UpdateScope -ne 'Software Center-visible SCCM updates')) {
+         $InputRow.UpdateScope -ne 'Software Center-visible Windows OS and .NET patches')) {
         $row.MissingCount = ''; $row.MissingUpdates = ''
         $row.UpdateScope = 'Previous assessment scope; reassessment required'
     }
     $row.SchemaVersion = '4'
     $row
+}
+
+# ClientSDK exposes names, not a product-category contract. These conservative
+# title rules define the agreed OS/.NET scope; unknown titles require review.
+function Get-WindowsPatchScope {
+    param([string]$Name)
+    if ([string]::IsNullOrWhiteSpace($Name)) { return 'Ambiguous' }
+    if ($Name -match '(?i)\b(Office|Microsoft 365|Microsoft365|M365|Excel|Word|PowerPoint|Outlook|OneNote|Visio|Project|SharePoint|Exchange|SQL Server|Microsoft Edge|Teams|OneDrive|Visual Studio|Visual C\+\+|Silverlight|Defender|Security Intelligence|Endpoint Protection|Malicious Software Removal Tool|MSRT|drivers?|firmware)\b|Feature\s+(update|upgrade)|Upgrade\s+to\s+Windows|\benablement package\b') { return 'Excluded' }
+    $hasUpdateKind = $Name -match '(?i)\b(Update|Rollup|Hotfix|Servicing Stack|Security Patch)\b'
+    $windowsTarget = '(?:Microsoft Windows\b|Windows\s+(?:Server|[0-9]|Vista|XP)|Microsoft server operating system\b)'
+    $hasPatchHeading = $Name -match '(?i)^(?:\d{4}-\d{2}\s+)?(?:(?:Cumulative|Security|Critical|Servicing Stack|Monthly|Quality|Preview(?:\s+of)?|Dynamic|Safe OS|Only)\s+)*(?:Update|Rollup|Hotfix)\b'
+    $hasWindowsProduct = ($hasPatchHeading -and $Name -match ('(?i)(?:Update|Rollup|Hotfix)(?:\s+Preview)?\s+(?:for|to)\s+' + $windowsTarget)) -or $Name -match ('(?i)^(?:\d{4}-\d{2}\s+)?' + $windowsTarget)
+    $hasDotNetProduct = $Name -match '(?i)^(?:Microsoft\s+)?\.NET\b' -or ($hasPatchHeading -and $Name -match '(?i)(?:Update|Rollup|Hotfix)(?:\s+Preview)?\s+for\s+(?:Microsoft\s+)?\.NET\b')
+    if ($hasUpdateKind -and ($hasWindowsProduct -or $hasDotNetProduct)) { return 'Included' }
+    'Ambiguous'
 }
 
 function Read-ValidationInput {
@@ -232,7 +253,7 @@ function ConvertTo-SafeCsvRow {
         $copy.$field = Format-ValidationTimestamp $copy.$field
     }
     $copy.TrackingJson = ConvertTo-Json -InputObject $tracking -Compress
-    foreach ($field in @('Reason','MissingUpdates','UpdateScope','ScanRequestOutcome','ScanRequestDetails','RebootReasons','Diagnostics','Verification')) {
+    foreach ($field in @('Reason','MissingUpdates','UpdateScope','RebootScope','FailedUpdates','ScopeAmbiguousUpdates','ScanRequestOutcome','ScanRequestDetails','RebootReasons','Diagnostics','Verification')) {
         if ($copy.$field -match '^\s*[=+@-]') { $copy.$field = "'" + $copy.$field }
     }
     $copy

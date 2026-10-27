@@ -1,4 +1,4 @@
-# Server Update Validation 1.0.8
+# Server Update Validation 0.9.0-beta.1
 
 Windows desktop tool for post-monthly-reboot assessment using SCCM client data. Computers
 are assumed to have SCCM installed, to have recently rebooted, and to respond to ping.
@@ -6,14 +6,21 @@ The first wave assesses the input list. Follow-up actions separately check pendi
 verification or reassess unfinished computers after remediation. There is no
 automatic recovery wait, repeating wave, or retry loop.
 
-The operational scope is **Software Center-visible updates waiting and pending
-reboot**, followed by verification of a qualifying SCCM client scan. It is not a
+The operational scope is **Software Center-visible Windows OS and .NET patches,
+with strict patching/OS reboot detection that ignores PFRO entirely**, followed by
+verification of a qualifying SCCM client scan. It is not a
 complete Windows update inventory or an application-health assessment.
 
 Download the packaged ZIP and matching checksum from this repository's **Releases**
 page, or clone the repository and keep the source files together. The current
-version is **1.0.8**. The user has reported a successful live pilot of 1.0.6; compatibility
+version is **0.9.0-beta.1**. This is beta software; earlier 1.0.x tags were test-build
+labels, not a general-availability declaration. Future builds remain below 1.0 until
+the owner explicitly authorizes that transition. The owner has reported successful
+live testing of earlier builds; compatibility
 with other SCCM client versions and environments still requires validation.
+
+Use the [current beta prerelease](https://github.com/Smells-Like-Coffee/Invoke-ServerUpdateValidate/releases/tag/v0.9.0-beta.1)
+for this revision. The older 1.0.x downloads are retained as historical test artifacts.
 
 ## Start here
 
@@ -133,6 +140,19 @@ Windows version and desktop theme. UI.Theme.ps1 must remain with the other scrip
 - Scrollable, sortable results grid with status filter, name search, and a selected
   row detail panel showing the report fields and diagnostic evidence.
 - **Unfinished** is the default status filter. Switch to PASS or All as needed.
+- Click any colored status total to apply that status filter to Computer status.
+  Existing search text remains applied; the View menu checkmark stays synchronized.
+- Wave setup and Checks are separate panes. Collapse setup, or use View > Show wave
+  setup pane, to reclaim space without hiding the check actions.
+- View > Show concurrent check progress toggles the smaller worker bars below overall
+  progress. They show actual observed assessment stages with computer name and
+  elapsed time; a marquee indicates no progress record has arrived yet. They do not
+  measure update-installation percentages or invent progress from elapsed time.
+  Each configured worker has a slot; scroll the worker area for additional slots.
+  Completion means the check returned, not that the computer passed.
+- Hover over fields, buttons, status totals, or worker labels for contextual help.
+  Setup-collapse and worker-bar preferences are saved with campaign settings. Changes
+  made during a wave are saved after it completes; old session files remain readable.
 - **Export CSV** opens a Save dialog and exports a snapshot of the filtered and
   searched table, in its current sort order. It contains exactly Computer, Status,
   Reason / current step, Updates, Reboot, and Last checked (UTC). Full reason text
@@ -222,18 +242,19 @@ computer to have at least 120 seconds of uptime (a conservative startup guard).
 SCCM update states indicating installation or verification in progress yield NOT READY.
 Process names such as TiWorker are not used as proof of active servicing.
 
-The project's update authority is **updates visible in Software Center**, plus the
+The project's update authority is **OS/.NET patches visible in Software Center**, plus the
 separately checked pending-reboot indicators. The tool uses Software Center's backing
 **CCM_SoftwareUpdate** client API under root\ccm\ClientSDK and includes only records
 with **UserUIExperience = True**, Microsoft's documented Software Center visibility
-flag. It does not screen-scrape the application. Software Center's displayed list can
+flag, followed by explicit title-based scope classification. It does not screen-scrape the application. Software Center's displayed list can
 refresh at a different instant from the client API; the report is a point-in-time
 assessment of that visible-update scope, not a screenshot comparison.
 
 MissingCount/MissingUpdates describe visible updates with ComplianceState 0. The grid
 labels this count **Updates**. Visible updates with indeterminate compliance prevent
 a clear assessment. Hidden deployments, including their install/verification states,
-are outside the update scope. Global reboot flags are still independently relevant.
+are outside the update scope. Known non-OS products are excluded. Unknown titles
+yield NOT READY and are listed in ScopeAmbiguousUpdates; they cannot silently pass.
 A failed required query or missing visibility flag cannot become a clean zero count.
 
 The broader update store is no longer queried or included in the reports. Its 12
@@ -244,10 +265,29 @@ With zero visible updates waiting and no pending reboot, the first clear wave re
 a scan and reports VERIFICATION PENDING. A later wave can PASS only after qualifying
 scan completion evidence and another clear visible-update/reboot assessment.
 
-Reboot checks read SCCM client pending/hard-reboot flags, deployed-update reboot
-states, Windows servicing's RebootPending key, Windows Update's RebootRequired key,
-and both Session Manager pending file-rename values in the 64-bit registry view.
-File-rename flags can be stale or unrelated to patching and are listed explicitly.
+Reboot authority is limited to in-scope visible update states 8/9/10, Windows CBS
+RebootPending, and Windows Update RebootRequired in the 64-bit registry view.
+Neither PendingFileRenameOperations nor PendingFileRenameOperations2 is read.
+The generic CCM_ClientUtilities reboot method is not called: its flags do not
+identify the reboot cause and must not reintroduce PFRO/non-OS findings indirectly.
+
+The client API does not expose a documented product-category field. The local
+Get-WindowsPatchScope rules include Windows cumulative/security/servicing updates
+and .NET updates; they exclude Office/Microsoft 365 and related products, Defender
+definitions, drivers/firmware, MSRT, feature upgrades, and enablement packages.
+This is a conservative title-rule contract, not a vendor product-ID classification.
+Unrecognized titles require operator review; update the rules only after reviewing
+representative titles from your environment. The broad update store remains unused.
+
+VisibleUpdatesFailed, FailedUpdateCount, and FailedUpdates describe in-scope updates
+whose EvaluationState is 13 (Error). ErrorCode is included when available. NOT READY
+reasons state Yes/No/Unknown for reported failures, even when the client is stopped
+or within the startup guard. An unavailable update query yields Unknown, never No.
+Failure states in excluded products do not affect this OS/.NET assessment.
+
+After upgrading an existing campaign, run Reassess unfinished to refresh findings
+under the new scope, including earlier PFRO-only results. Prior timestamps and
+finished results are retained; the application and report-schema versions are separate.
 
 When initial checks are clear, the only state-changing call is **Scan by Update Source**,
 SMS_Client.TriggerSchedule `{00000000-0000-0000-0000-000000000113}`. Request success

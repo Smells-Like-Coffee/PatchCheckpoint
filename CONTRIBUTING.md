@@ -36,6 +36,10 @@ reduce accidental inclusion but do not replace review.
 
 ## Distribution
 
+This application is beta. Use pre-1.0 application versions until the owner explicitly
+authorizes the 1.0 transition. Earlier 1.0.x tags were test-build labels; do not infer
+release maturity from them. GitHub downloads for current beta builds are prereleases.
+
 Release ZIPs belong in GitHub Releases rather than source history. Include the
 matching SHA-256 checksum and state the validated runtime and test boundaries.
 Keep packaged source consistent with its release tag when producing a new build.

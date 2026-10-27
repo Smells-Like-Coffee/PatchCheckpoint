@@ -2,7 +2,7 @@
 .SYNOPSIS
     Runs a single assessment on a target Windows computer through WinRM.
 .DESCRIPTION
-    Reads Software Center-visible SCCM updates, client readiness,
+    Reads Software Center-visible Windows OS/.NET patches, client readiness,
     scan history, and reboot indicators. The sole state-changing action is schedule
     113, requested only when initial checks are clear. No installation or reboot
     methods are called. Uncertain evidence prevents PASS.
@@ -15,7 +15,10 @@ $row = ConvertTo-ValidationRow $InputRow
 $row.Status = 'UNABLE TO DETERMINE'; $row.Reason = ''
 $row.CheckedAtUtc = [datetime]::UtcNow.ToString('o')
 $row.MissingCount = ''; $row.MissingUpdates = ''; $row.RebootPending = 'Unknown'
-$row.UpdateScope = 'Software Center-visible SCCM updates'
+$row.UpdateScope = 'Software Center-visible Windows OS and .NET patches'
+$row.RebootScope = 'Strict patching/OS; PFRO ignored'
+$row.VisibleUpdatesFailed = 'Unknown'; $row.FailedUpdateCount = ''; $row.FailedUpdates = ''
+$row.ScopeExcludedCount = ''; $row.ScopeAmbiguousCount = ''; $row.ScopeAmbiguousUpdates = ''
 $row.RebootReasons = ''; $row.Diagnostics = ''; $row.ScanEvidenceJson = ''; $row.Verification = ''
 $row.VerificationContextJson = ''
 if ($InputRow.Verification -eq 'ATTEMPT IN PROGRESS' -and -not $InputRow.ScanRequestedAtUtc) {
@@ -70,80 +73,110 @@ function Get-RegistryRebootReasons {
             $key = $registry.OpenSubKey($keys[$label])
             if ($null -ne $key) { $reasons.Add($label); $key.Dispose() }
         }
-        $key = $registry.OpenSubKey('SYSTEM\CurrentControlSet\Control\Session Manager')
-        if ($null -eq $key) { throw 'Session Manager registry key is unavailable.' }
-        try {
-            $renames = @($key.GetValue('PendingFileRenameOperations')) + @($key.GetValue('PendingFileRenameOperations2'))
-            if (@($renames | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count) { $reasons.Add('Pending file rename operations') }
-        }
-        finally { $key.Dispose() }
+        # PFRO/PFRO2 are deliberately never opened or read in strict OS mode.
     }
     finally { $registry.Dispose() }
     $reasons.ToArray()
 }
 $stage = 'Reading Windows and client readiness'
 try {
+    Write-Progress -Id 113 -Activity 'Server assessment' -Status $stage -PercentComplete 10
+    $notReadyReasons = New-Object 'System.Collections.Generic.List[string]'
     $os = Get-CimInstance -ClassName Win32_OperatingSystem -OperationTimeoutSec 20
     $row.LastBootUtc = ConvertTo-UtcText $os.LastBootUpTime
     $row.UptimeMinutes = [math]::Round(([datetime]::UtcNow - ([datetimeoffset]::Parse($row.LastBootUtc).UtcDateTime)).TotalMinutes, 2)
     if ([double]$row.UptimeMinutes -lt 0) { throw 'Server clock is earlier than its boot time.' }
     $row.ClientService = (Get-Service -Name CcmExec -ErrorAction Stop).Status.ToString()
     if ($row.ClientService -ne 'Running') {
-        $row.Status = 'NOT READY'; $row.Reason = "SCCM client service is $($row.ClientService)."; return $row
+        $notReadyReasons.Add("SCCM client service is $($row.ClientService).")
     }
     # A short startup guard is explicit and configurable; process names alone do
     # not establish that Windows servicing is active or finished.
     if ([double]$row.UptimeMinutes -lt ([double]$Options.MinimumUptimeSeconds / 60)) {
-        $row.Status = 'NOT READY'; $row.Reason = "Recent boot: uptime is $($row.UptimeMinutes) minutes; startup guard has not elapsed."; return $row
+        $notReadyReasons.Add("Recent boot: uptime is $($row.UptimeMinutes) minutes; startup guard has not elapsed.")
     }
 
     $before = $null; $scanError = ''
-    try { $before = Get-ScanSnapshot } catch { $scanError = $_.Exception.Message }
+    if (-not $notReadyReasons.Count) { try { $before = Get-ScanSnapshot } catch { $scanError = $_.Exception.Message } }
     # Use Software Center's backing API, filtered by its documented visibility flag.
     # Hidden deployments and broader update-store findings are outside this scope.
     $stage = 'Reading Software Center-visible updates'
-    $allDeployed = @(Get-CimInstance -Namespace root\ccm\ClientSDK -ClassName CCM_SoftwareUpdate -OperationTimeoutSec 20)
-    $deployed = @($allDeployed | Where-Object { (Get-RequiredProperty $_ 'UserUIExperience') -eq $true })
+    Write-Progress -Id 113 -Activity 'Server assessment' -Status $stage -PercentComplete 30
+    try {
+        $allDeployed = @(Get-CimInstance -Namespace root\ccm\ClientSDK -ClassName CCM_SoftwareUpdate -OperationTimeoutSec 20)
+        $visible = @($allDeployed | Where-Object { (Get-RequiredProperty $_ 'UserUIExperience') -eq $true })
+        $deployed = @(); $ambiguous = @(); $excluded = @()
+        foreach ($update in $visible) {
+            switch (Get-WindowsPatchScope ([string](Get-RequiredProperty $update 'Name'))) {
+                'Included' { $deployed += $update }
+                'Excluded' { $excluded += $update }
+                default { $ambiguous += $update }
+            }
+        }
+        $row.ScopeExcludedCount = $excluded.Count; $row.ScopeAmbiguousCount = $ambiguous.Count
+        $row.ScopeAmbiguousUpdates = ($ambiguous | ForEach-Object { 'Title={0}; Evaluation={1}; ID={2}' -f $_.Name,$_.EvaluationState,$_.UpdateID }) -join ' | '
+        $failed = @($deployed | Where-Object { (Get-RequiredProperty $_ 'EvaluationState') -eq 13 })
+        $row.FailedUpdateCount = $failed.Count
+        $row.VisibleUpdatesFailed = if ($failed.Count) { 'Yes' } else { 'No' }
+        $row.FailedUpdates = ($failed | ForEach-Object {
+            $code = if ($_.PSObject.Properties.Name -contains 'ErrorCode' -and $null -ne $_.ErrorCode) { [string]$_.ErrorCode } else { 'Unavailable' }
+            'Article={0}; Title={1}; Evaluation=13 (Error); ErrorCode={2}; ID={3}' -f $_.ArticleID,$_.Name,$code,$_.UpdateID
+        }) -join ' | '
+    }
+    catch {
+        if (-not $notReadyReasons.Count) { throw }
+        $row.Status = 'NOT READY'; $row.Reason = ($notReadyReasons -join ' ') + ' Visible OS/.NET update failures: Unknown; update query unavailable.'
+        $row.Diagnostics = $_.Exception.Message
+        return $row
+    }
     $missing = @($deployed | Where-Object { (Get-RequiredProperty $_ 'ComplianceState') -eq 0 })
     $unknown = @($deployed | Where-Object { $_.ComplianceState -notin @(0,1) })
     $row.MissingCount = $missing.Count
     $row.MissingUpdates = ($missing | ForEach-Object {
         'Article={0}; Title={1}; ID={2}; Evaluation={3}; VisibleInSoftwareCenter={4}' -f $_.ArticleID, $_.Name, $_.UpdateID, $_.EvaluationState, $_.UserUIExperience
     }) -join ' | '
+    $failureSummary = "Visible OS/.NET update failures: $($row.VisibleUpdatesFailed) ($($row.FailedUpdateCount) reported)."
+    if ($notReadyReasons.Count) {
+        $row.Status = 'NOT READY'; $row.Reason = ($notReadyReasons -join ' ') + ' ' + $failureSummary; return $row
+    }
+    if ($ambiguous.Count) {
+        $row.Status = 'NOT READY'; $row.Reason = "OS scope needs review for $($ambiguous.Count) visible updates. $failureSummary"; return $row
+    }
     if (@($deployed | Where-Object { (Get-RequiredProperty $_ 'EvaluationState') -in @(7,11) }).Count) {
         Clear-VerificationRequest $row
-        $row.Status = 'NOT READY'; $row.Reason = 'A Software Center-visible update is installing or verifying installation.'; return $row
+        $row.Status = 'NOT READY'; $row.Reason = "A visible OS/.NET update is installing or verifying installation. $failureSummary"; return $row
     }
 
     $reasons = New-Object 'System.Collections.Generic.List[string]'
     $stage = 'Reading pending reboot indicators'
-    $reboot = Invoke-CimMethod -Namespace root\ccm\ClientSDK -ClassName CCM_ClientUtilities -MethodName DetermineIfRebootPending -OperationTimeoutSec 20
-    if ((Get-RequiredProperty $reboot 'ReturnValue') -ne 0) { throw 'SCCM reboot query returned a failure code.' }
-    if ((Get-RequiredProperty $reboot 'RebootPending') -or (Get-RequiredProperty $reboot 'IsHardRebootPending')) { $reasons.Add('SCCM client') }
+    Write-Progress -Id 113 -Activity 'Server assessment' -Status $stage -PercentComplete 55
+    # Generic CCM_ClientUtilities flags have no cause attribution. They are not
+    # authority here: PFRO and non-OS deployments must not indirectly block PASS.
     if (@($deployed | Where-Object { $_.EvaluationState -in @(8,9,10) }).Count) { $reasons.Add('SCCM update awaiting reboot') }
     foreach ($reason in @(Get-RegistryRebootReasons)) { $reasons.Add($reason) }
     $row.RebootPending = if ($reasons.Count) { 'Yes' } else { 'No' }
     $row.RebootReasons = $reasons -join '; '
 
-    if ($missing.Count -or $reasons.Count) {
+    if ($missing.Count -or $failed.Count -or $reasons.Count) {
         Clear-VerificationRequest $row
         $row.Status = 'ACTION REQUIRED'
-        $row.Reason = "Software Center-visible updates waiting: $($missing.Count). Pending reboot: $($row.RebootPending). $($row.RebootReasons)"
+        $row.Reason = "Visible OS/.NET patches waiting: $($missing.Count). Pending reboot: $($row.RebootPending). $($row.RebootReasons) $failureSummary"
         return $row
     }
     if ($unknown.Count) { throw "$($unknown.Count) Software Center-visible updates have indeterminate compliance. No clean result can be established." }
 
     $stage = 'Verifying scan-completion evidence'
+    Write-Progress -Id 113 -Activity 'Server assessment' -Status $stage -PercentComplete 75
     if ($scanError) { throw $scanError }
     $after = Get-ScanSnapshot
     if ($before.Signature -ne $after.Signature) {
-        $row.Status = 'NOT READY'; $row.Reason = 'Scan history or update-source metadata changed during assessment. Check again in the next wave.'; return $row
+        $row.Status = 'NOT READY'; $row.Reason = "Scan history or update-source metadata changed during assessment. $failureSummary"; return $row
     }
     $sources = @($after.Sources); $history = @($after.History)
     $bootAfter = ConvertTo-UtcText (Get-CimInstance -ClassName Win32_OperatingSystem -OperationTimeoutSec 20).LastBootUpTime
     if ($bootAfter -ne $row.LastBootUtc) {
         # A changing observation cannot justify replacing an earlier request.
-        $row.Status = 'NOT READY'; $row.Reason = 'Boot time changed during assessment. Any earlier scan request is retained.'
+        $row.Status = 'NOT READY'; $row.Reason = "Boot time changed during assessment. Any earlier scan request is retained. $failureSummary"
         $row.VerificationContextJson = ConvertTo-Json -InputObject ([ordered]@{ Decision = 'BOOT CHANGED DURING ASSESSMENT'; LoadedRequestUtc = $InputRow.ScanRequestedAtUtc; InitialBootUtc = $row.LastBootUtc; FinalBootUtc = $bootAfter }) -Compress
         return $row
     }
@@ -162,7 +195,7 @@ try {
         ObservedHistory = @($history)
     }) -Depth 6 -Compress
     if ($verification -eq 'CONFIRMED') {
-        $row.Status = 'PASS'; $row.Reason = 'Verification scan confirmed; no Software Center-visible updates waiting and no pending reboot.'; return $row
+        $row.Status = 'PASS'; $row.Reason = 'Verification scan confirmed; no in-scope Windows OS/.NET patches waiting and no strict OS reboot finding.'; return $row
     }
     if ($row.ScanRequestedAtUtc) {
         # Never renew a pending request silently, including when a boot/source
@@ -191,6 +224,7 @@ try {
     $row.ScanRequestDetails = 'Submission started; provider acknowledgement not yet read.'
     $row.Verification = 'REQUEST OUTCOME UNKNOWN'
     $stage = 'Submitting SCCM verification scan'
+    Write-Progress -Id 113 -Activity 'Server assessment' -Status $stage -PercentComplete 90
     # Record the boundary before submission. If the response is lost or nonzero,
     # preserve the boundary and do not issue repeated requests automatically.
     $trigger = Invoke-CimMethod -Namespace root\ccm -ClassName SMS_Client -MethodName TriggerSchedule -Arguments @{ sScheduleID = '{00000000-0000-0000-0000-000000000113}' } -OperationTimeoutSec 20
@@ -204,7 +238,7 @@ try {
     $row.Status = 'VERIFICATION PENDING'
     if ($acknowledgement.Outcome -eq 'Accepted') {
         $row.Verification = 'REQUESTED'
-        $row.Reason = 'Scan request accepted. Use the unfinished CSV in the next wave to confirm completion.'
+        $row.Reason = 'Scan request accepted. Use Check pending verification on the next wave to confirm completion.'
     }
     else {
         $row.Verification = 'REQUEST UNCONFIRMED'
@@ -217,4 +251,5 @@ catch {
     # Explicit text avoids ErrorRecord display formatting suppressing diagnostics.
     $row.Diagnostics = 'Stage={0}; ErrorId={1}; Category={2}; Exception={3}; Message={4}; Stack={5}' -f $stage,$failure.FullyQualifiedErrorId,$failure.CategoryInfo.Category,$failure.Exception.GetType().FullName,$failure.Exception.Message,$failure.ScriptStackTrace
 }
+finally { Write-Progress -Id 113 -Activity 'Server assessment' -Completed }
 $row

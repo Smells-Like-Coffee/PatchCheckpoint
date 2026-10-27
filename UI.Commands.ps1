@@ -54,6 +54,8 @@ function Initialize-AppMenus {
     [void](New-AppMenuItem $view '&Find computer' 'Find' 'Control,F')
     [void](New-AppMenuItem $view '&Clear search' 'ClearSearch')
     [void](New-AppMenuItem $view 'Show &details pane' 'Details')
+    [void](New-AppMenuItem $view 'Show &wave setup pane' 'Setup')
+    [void](New-AppMenuItem $view 'Show concurrent check &progress' 'WorkerProgress')
     [void](New-AppMenuItem $view '&Reset view' 'ResetView')
     [void](New-AppMenuItem $help '&User guide' 'Guide' 'F1')
     [void](New-AppMenuItem $help '&Troubleshooting' 'Troubleshooting')
@@ -81,6 +83,7 @@ function Initialize-AppMenus {
         }
     })
     Update-AppCommandState
+    Initialize-AppToolTips
 }
 
 function Update-AppCommandState {
@@ -104,6 +107,8 @@ function Update-AppCommandState {
     $script:menuItems['FolderFinished'].Text = if ($sameFolder) { 'Reports folder' } else { 'Finished report folder' }
     $script:menuItems['FolderUnfinished'].Visible = -not $sameFolder
     $script:menuItems['Details'].Checked = $script:app.DetailsVisible
+    $script:menuItems['Setup'].Checked = -not $script:app.SetupCollapsed
+    $script:menuItems['WorkerProgress'].Checked = $script:app.ShowWorkerProgress
     foreach ($name in $script:filterMenuItems.Keys) { $script:filterMenuItems[$name].Checked = $script:filter.Text -eq $name }
     foreach ($key in @('CopyName','CopySummary','CopyDetails')) { $script:menuItems[$key].Enabled = $script:grid.SelectedRows.Count -eq 1 }
     $script:startButton.Enabled = $canRun
@@ -191,6 +196,8 @@ function Invoke-AppCommand {
             'Find' { $script:search.Focus(); $script:search.SelectAll() }
             'ClearSearch' { $script:search.Clear() }
             'Details' { $script:app.DetailsVisible = -not $script:app.DetailsVisible; Set-ValidationThemeLayout }
+            'Setup' { $script:app.SetupCollapsed = -not $script:app.SetupCollapsed; Set-ValidationThemeLayout; Save-AppViewPreferences }
+            'WorkerProgress' { $script:app.ShowWorkerProgress = -not $script:app.ShowWorkerProgress; Set-ValidationThemeLayout; Update-WorkerProgressDisplay; Save-AppViewPreferences }
             'ResetView' { Reset-AppView }
             { $_ -in @('CopyName','CopySummary','CopyDetails') } { [Windows.Forms.Clipboard]::SetText((Get-AppCopyText $Command)) }
             { $_ -in @('Guide','Troubleshooting','ReleaseNotes','About') } { Show-AppHelp $Command }
@@ -199,6 +206,56 @@ function Invoke-AppCommand {
         Update-AppCommandState
     }
     catch { Show-AppError $_.Exception.Message }
+}
+
+# Tooltips describe operator decisions, not implementation internals or secrets.
+function Initialize-AppToolTips {
+    foreach ($entry in @(
+        @($script:inputPath,'Original inventory. It is used once; follow-up waves use saved campaign state.'),
+        @($script:finishedPath,'Accumulated PASS results. These computers are excluded from follow-up waves.'),
+        @($script:unfinishedPath,'Latest unfinished results and verification tracking. Preserve this file between waves.')
+    )) {
+        $path = $entry[0]; $text = $entry[1]
+        $script:toolTips.SetToolTip($path.Label,$text); $script:toolTips.SetToolTip($path.Box,$text)
+        $script:toolTips.SetToolTip($path.Button,'Choose the CSV location. ' + $text)
+    }
+    $tips = @(
+        @($script:credentialButton,'Set the account used for remote checks. Credentials are kept in memory only.'),
+        @($script:accountLabel,'Account for subsequent remote checks. Passwords are never displayed or saved.'),
+        @($script:concurrency,'Maximum simultaneous computer checks, from 1 to 32. More workers can increase endpoint and network load.'),
+        @($script:loadButton,'Preview a new inventory, or reset setup for another campaign. Existing reports are preserved.'),
+        @($script:startButton,'Initially assesses the input list. Thereafter checks only VERIFICATION PENDING computers.'),
+        @($script:reassessButton,'Reassess every unfinished computer after investigation or remediation. PASS computers stay finished.'),
+        @($script:stopButton,'Stop dispatching work. Active checks and the final report checkpoint finish before the wave stops.'),
+        @($script:setupToggle,'Collapse or expand setup. Check actions remain visible in their own pane.'),
+        @($script:exportButton,'Export a snapshot of this filtered, searched, and sorted table. Detailed tracking fields are excluded.'),
+        @($script:filter,'Choose which computer statuses are displayed. This does not change wave selection.'),
+        @($script:search,'Filter displayed computers by name. Search is combined with the chosen status filter.'),
+        @($script:progress,'Overall progress for the computers selected in this wave. Completion does not mean all computers passed.'),
+        @($script:summary,'Counts apply to this wave; status totals describe the full campaign.'),
+        @($script:detail,'Evidence for the selected computer. Right-click a row to copy its summary or detailed results.'),
+        @($script:grid,'Latest results. Click a row for details, click a header to sort, or right-click to copy.'),
+        @($script:workerFlow,'Observed assessment stages for each worker slot. Marquee means waiting for progress; this does not measure patch installation.')
+    )
+    foreach ($tip in $tips) { $script:toolTips.SetToolTip($tip[0],$tip[1]) }
+    foreach ($status in $script:statusCountLabels.Keys) { $script:toolTips.SetToolTip($script:statusCountLabels[$status],"Show only $status computers. The current search remains applied.") }
+    $script:grid.ShowCellToolTips = $true
+    foreach ($column in $script:grid.Columns) { $column.ToolTipText = $column.HeaderText + '. Export preserves the complete value, even when a cell is truncated.' }
+    $script:menu.ShowItemToolTips = $true
+    foreach ($key in $script:menuItems.Keys) {
+        $script:menuItems[$key].ToolTipText = switch ($key) {
+            'Setup' { 'Toggle the setup pane without hiding the separate check actions.' }
+            'WorkerProgress' { 'Show or hide individual worker stage bars below overall progress.' }
+            'Verify' { 'Assess only computers waiting for verification; preserve all other findings.' }
+            'Reassess' { 'Check all unfinished computers after remediation; PASS computers are excluded.' }
+            default { $script:menuItems[$key].Text.Replace('&','') }
+        }
+    }
+}
+
+function Save-AppViewPreferences {
+    $script:app.ViewPreferencesDirty = $true
+    if ($script:app.CampaignStarted -and -not $script:app.Running -and -not $script:app.FatalSave) { Save-AppSession }
 }
 
 function Open-AppReportFolder {

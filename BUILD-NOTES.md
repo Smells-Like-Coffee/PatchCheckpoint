@@ -1,4 +1,21 @@
-# Build 1.0.8 - 2026-10-27
+# Build 0.9.0-beta.1 - 2026-10-27
+
+## Changes from test build 1.0.8
+
+- Returned application versioning to pre-1.0 beta at the owner's direction.
+- Restricted visible updates to Windows OS/.NET patches through explicit title
+  rules; excluded known other products and made ambiguous titles require review.
+- Removed all PFRO/PFRO2 reads and the generic SCCM reboot query. Only scoped update
+  reboot states, CBS, and Windows Update registry indicators control reboot findings.
+- Added scoped failure fields based on EvaluationState 13, with error details
+  and Yes/No/Unknown failure notes for NOT READY results.
+- Made status totals clickable filters; added contextual tooltips.
+- Split collapsible Wave setup from the always-available Checks pane.
+- Added View-toggleable worker progress slots using actual pipeline progress records,
+  with honest waiting, per-computer stage text, and elapsed time.
+- Corrected overall percentage to use selected wave work rather than all campaign rows.
+- Retained schema 4 and session version 1, with additive report fields and optional
+  saved UI preferences. Legacy scope labels require reassessment rather than relabeling.
 
 ## Changes from 1.0.7
 
@@ -137,13 +154,13 @@ does not include the earlier deleted prototype.
 
 Executed under Windows PowerShell 5.1 on Windows:
 
-- 65 core assertions: scan baselines, boot/catalog changes, malformed/missing evidence,
+- 80 core assertions: scan baselines, boot/catalog changes, malformed/missing evidence,
   formula escaping, CSV round trips, PASS accumulation/removal, header-only output,
   snapshots, duplicate/IP rejection, and exclusive file locks.
   Includes requested timestamp format, UTC conversion, exact-value round trips,
   display/tracking mismatch rejection, and legacy report compatibility.
   Includes prior-scope migration and accepted/rejected/unconfirmed acknowledgement shapes.
-- 69 remote-decision assertions with mocked SCCM data: visible update blocking,
+- 92 remote-decision assertions with mocked SCCM data: visible update blocking,
   hidden update exclusion, no broad-store query, independent reboot flags, readiness,
   required query failures, inconsistent snapshot, rejected/thrown scan submissions,
   and interrupted dispatch. Empty, absent, null and malformed acknowledgement cases

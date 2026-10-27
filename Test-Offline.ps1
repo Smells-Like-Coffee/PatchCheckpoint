@@ -23,6 +23,16 @@ $sources = @([pscustomobject]@{ Id = 'SOURCE-A'; Version = '7' })
 $baseline = @([pscustomobject]@{ Id = 'SOURCE-A'; Version = '7'; CompletedUtc = '2026-01-01T00:00:00Z' })
 $history = @([pscustomobject]@{ Id = 'SOURCE-A'; Version = '7'; Valid = $true; CompletedUtc = '2026-01-01T02:00:00Z' })
 $r = New-ValidationRow 'SERVER01'
+foreach ($name in @('2026-10 Cumulative Update for Windows Server 2016 (KB123)','Security Update for Microsoft Windows (KB123)','2026-10 Cumulative Update for .NET Framework 4.8 for Windows Server 2016 (KB123)','.NET 8.0.20 Update for x64 Client (KB123)')) {
+    Assert-Equal (Get-WindowsPatchScope $name) 'Included' 'OS/.NET patch title is included'
+}
+foreach ($name in @('Security Update for Microsoft Office 2016 (KB123)','Microsoft Edge Update','Security Intelligence Update for Microsoft Defender','Windows Malicious Software Removal Tool x64','Feature update to Windows 11 version 24H2','Windows 11 enablement package','NVIDIA display driver update')) {
+    Assert-Equal (Get-WindowsPatchScope $name) 'Excluded' 'Explicit non-OS product/upgrade title is excluded'
+}
+Assert-Equal (Get-WindowsPatchScope 'Vendor maintenance package') 'Ambiguous' 'Unrecognized titles require review instead of silently passing'
+Assert-Equal (Get-WindowsPatchScope '') 'Ambiguous' 'Missing title cannot establish OS scope'
+Assert-Equal (Get-WindowsPatchScope 'Vendor .NET agent update') 'Ambiguous' 'Mentioning .NET in an application title is not enough'
+Assert-Equal (Get-WindowsPatchScope 'Vendor application update for Windows 10') 'Ambiguous' 'A generic Windows reference does not identify an OS patch'
 $selectionRows = @(
     foreach ($status in @('VERIFICATION PENDING','ACTION REQUIRED','UNABLE TO DETERMINE','NOT READY','QUEUED','PASS')) {
         $item = New-ValidationRow ('SELECT-' + [guid]::NewGuid().ToString('N'))

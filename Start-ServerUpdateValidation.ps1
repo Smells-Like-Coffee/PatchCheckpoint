@@ -24,7 +24,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '1.0.8'
+$script:AppVersion = '0.9.0-beta.1'
 $script:ProjectRoot = $PSScriptRoot
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or -not [Environment]::Is64BitProcess -or
     [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
@@ -51,6 +51,8 @@ $script:app = @{
     StatusCounts = @{}
     WorkIndices = @(); WaveMode = 'Initial'; DetailsVisible = $true
     RecoveryFailed = $false
+    SetupCollapsed = $false; ShowWorkerProgress = $true; LastWorkerResults = @{}
+    ViewPreferencesDirty = $false
 }
 
 # Workers have no GUI references. All remote invocation and waiting occurs away
@@ -58,15 +60,20 @@ $script:app = @{
 $script:workerSource = {
     param($Name,$Credential,$RemotePath,$Helpers,$Row,$Options,$DemoMode)
     $ErrorActionPreference = 'Stop'
+    $ProgressPreference = 'Continue'
     . ([scriptblock]::Create($Helpers))
     if ($DemoMode) {
-        [Threading.Thread]::Sleep(700)
+        Write-Progress -Id 113 -Activity 'Server assessment' -Status 'Reading client readiness (demo)' -PercentComplete 10
+        [Threading.Thread]::Sleep(350)
+        Write-Progress -Id 113 -Activity 'Server assessment' -Status 'Reading patch and reboot state (demo)' -PercentComplete 55
+        [Threading.Thread]::Sleep(350)
         $r = ConvertTo-ValidationRow $Row
         $r.CheckedAtUtc = [datetime]::UtcNow.ToString('o')
         $r.LastBootUtc = [datetime]::UtcNow.AddHours(-1).ToString('o')
         $r.UptimeMinutes = '60'; $r.ClientService = 'Running'
         $r.MissingCount = '0'; $r.RebootPending = 'No'; $r.Diagnostics = 'SYNTHETIC DEMO RESULT'
-        $r.UpdateScope = 'Software Center-visible SCCM updates'
+        $r.UpdateScope = 'Software Center-visible Windows OS and .NET patches'
+        $r.VisibleUpdatesFailed = 'No'; $r.FailedUpdateCount = '0'
         $number = 0
         [void][int]::TryParse(($Name -replace '\D',''), [ref]$number)
         switch ($number % 6) {
@@ -82,6 +89,7 @@ $script:workerSource = {
                 }
             }
         }
+        Write-Progress -Id 113 -Activity 'Server assessment' -Completed
         return $r
     }
     if ($Row.Verification -like 'DEMO*') { throw 'Demo tracking data cannot be used for live assessments. Use the original names-only CSV.' }
@@ -185,11 +193,14 @@ function Refresh-AppTable {
 # Atomic replacement avoids leaving partial restart settings after interruption.
 function Save-AppSession {
     $session = [ordered]@{ Version = 1; InputPath = $script:inputPath.Box.Text; FinishedPath = $script:app.FinishedPath; UnfinishedPath = $script:app.UnfinishedPath; Concurrency = [int]$script:concurrency.Value }
+    $session.ShowWorkerProgress = $script:app.ShowWorkerProgress
+    $session.SetupCollapsed = $script:app.SetupCollapsed
     $temp = $script:app.SessionPath + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
     try {
         [IO.File]::WriteAllText($temp,(ConvertTo-Json -InputObject $session))
         if ([IO.File]::Exists($script:app.SessionPath)) { [IO.File]::Replace($temp,$script:app.SessionPath,($script:app.SessionPath + '.bak'),$true) }
         else { [IO.File]::Move($temp,$script:app.SessionPath) }
+        $script:app.ViewPreferencesDirty = $false
     }
     finally { if ([IO.File]::Exists($temp)) { [IO.File]::Delete($temp) } }
 }
@@ -203,6 +214,7 @@ function Reset-AppCampaign {
     $script:app.CampaignStarted = $false; $script:app.Rows = @(); $script:app.Finished = @{}
     $script:app.WorkIndices = @(); $script:app.Next = 0; $script:app.Done = 0
     $script:app.RecoveryFailed = $false
+    $script:app.LastWorkerResults = @{}
     $script:app.Clock.Reset()
     $script:table.Clear(); $script:detail.Clear()
     $script:startButton.Text = 'Start wave'; $script:loadButton.Text = 'Load list'
@@ -231,6 +243,7 @@ function Update-AppProgress {
     $script:footer.Text = 'Elapsed {0} | {1} | {2}' -f $script:app.Clock.Elapsed.ToString('hh\:mm\:ss'), $(if ($Demo) { 'DEMO: no network actions' } else { 'Read-only except verification scan' }),$saveState
     if ($script:app.ExportNotice) { $script:footer.Text += ' | ' + $script:app.ExportNotice }
     Update-ValidationThemeSummary
+    Update-WorkerProgressDisplay
 }
 function Save-AppReports {
     Save-WaveReports -Rows $script:app.Rows -Finished $script:app.Finished -FinishedPath $script:app.FinishedPath -UnfinishedPath $script:app.UnfinishedPath
@@ -327,7 +340,7 @@ function Set-SetupEnabled {
     $script:stopButton.Enabled = -not $Enabled
     if ($script:app.CampaignStarted) {
         foreach ($pathControl in @($script:inputPath,$script:finishedPath,$script:unfinishedPath)) { $pathControl.Box.Enabled = $false; $pathControl.Button.Enabled = $false }
-        $script:startButton.Text = "Check pending`r`nverification"; $script:loadButton.Text = 'New list'
+        $script:startButton.Text = 'Check pending verification'; $script:loadButton.Text = 'New list'
     }
     $script:reassessButton.Enabled = $Enabled -and $script:app.CampaignStarted -and -not $script:app.FatalSave
     if ($Demo) { $script:credentialButton.Enabled = $false }
@@ -393,6 +406,7 @@ function Start-AppWave {
         $script:app.ReportPool = [RunspaceFactory]::CreateRunspacePool(1,1)
         $script:app.ReportPool.ApartmentState = 'MTA'; $script:app.ReportPool.Open()
         $script:app.PendingDispatch.Clear(); $script:app.ReportsDirty = $true
+        $script:app.LastWorkerResults = @{}
         $script:app.LastProgressMs = -1000; $script:app.ProgressDirty = $true; $script:app.Checkpoints = 0
         if (-not $script:app.ExportJob) { $script:app.ExportNotice = '' }
         $script:app.Next = 0; $script:app.Done = 0; $script:app.Stopping = $false; $script:app.FatalSave = $false
@@ -440,6 +454,7 @@ function Invoke-AppTick {
                 $work.PowerShell.Dispose(); $work.Clock.Stop(); $script:app.Workers.Remove($work)
             }
             $script:app.Rows[$work.Index] = $row; $script:app.Done++
+            $script:app.LastWorkerResults[$work.Slot] = [pscustomobject]@{ Name = $row.ComputerName; Status = $row.Status }
             if ($row.Status -eq 'PASS') { $script:app.Finished[$row.ComputerName] = $row }
             else { $script:app.Finished.Remove($row.ComputerName) }
             Update-GridRow $work.Index
@@ -466,7 +481,9 @@ function Invoke-AppTick {
             [void]$ps.AddScript($script:workerSource).AddArgument($original.ComputerName).AddArgument($script:app.Credential).AddArgument($script:app.RemotePath).AddArgument($script:app.Helpers).AddArgument($original).AddArgument(@{ MinimumUptimeSeconds = $MinimumUptimeSeconds }).AddArgument([bool]$Demo)
             try { $handle = $ps.BeginInvoke() }
             catch { $ps.Dispose(); throw }
-            [void]$script:app.Workers.Add([pscustomobject]@{ Index = $index; PowerShell = $ps; Handle = $handle; Clock = [Diagnostics.Stopwatch]::StartNew(); TimedOut = $false; StopHandle = $null })
+            $usedSlots = @($script:app.Workers | ForEach-Object Slot)
+            $slot = @(1..([int]$script:concurrency.Value) | Where-Object { $_ -notin $usedSlots })[0]
+            [void]$script:app.Workers.Add([pscustomobject]@{ Index = $index; PowerShell = $ps; Handle = $handle; Clock = [Diagnostics.Stopwatch]::StartNew(); TimedOut = $false; StopHandle = $null; Slot = $slot; StepPercent = -1; StepText = 'Connecting / waiting for remote progress' })
             $script:app.PendingDispatch.Remove($pending)
             $launchedThisTick++; $script:app.ProgressDirty = $true
         }
@@ -502,6 +519,9 @@ function Invoke-AppTick {
                 elseif (-not $pendingCount) { "Verification checks complete. $remaining computers still require attention. Use Reassess unfinished after remediation." }
                 else { "$($script:app.Finished.Count) finished; $pendingCount verification pending; $($remaining - $pendingCount) require attention." }
             if ($script:app.FatalSave) { $script:footer.Text = 'Report error: wave stopped. Recent results may be unsaved. Resolve the error and reopen the application.' }
+            if ($script:app.ViewPreferencesDirty -and -not $script:app.FatalSave) {
+                try { Save-AppSession } catch { $script:footer.Text += ' View preferences could not be saved.' }
+            }
             if ($script:app.Closing) { $script:app.AllowClose = $true; $script:form.Close() }
         }
     }
@@ -639,6 +659,7 @@ $script:form.Add_FormClosing({
 $script:form.ClientSize = [Drawing.Size]::new(1200,850)
 Set-ValidationTheme
 Initialize-AppMenus
+$script:concurrency.Add_ValueChanged({ Update-WorkerProgressDisplay })
 if ($Demo) {
     $script:credentialButton.Enabled = $false; $script:accountLabel.Text = 'OFFLINE DEMO - no credentials or server actions'
     $script:inputPath.Box.Text = Join-Path $PSScriptRoot 'Computers.example.csv'
@@ -659,6 +680,10 @@ function Restore-AppSession {
     $script:app.Finished = $campaign.Finished; $script:app.Rows = $campaign.Rows
     $script:app.WorkIndices = @(); $script:app.Next = 0; $script:app.Done = 0; $script:app.Clock.Reset()
     $script:app.CampaignStarted = $true; $script:app.RecoveryFailed = $false
+    foreach ($name in @('ShowWorkerProgress','SetupCollapsed')) {
+        if ($saved.PSObject.Properties.Name -contains $name -and $saved.$name -is [bool]) { $script:app.$name = $saved.$name }
+    }
+    Set-ValidationThemeLayout
     Refresh-AppTable; Set-SetupEnabled $true; Update-AppProgress
     $script:summary.Text = "$($script:app.Rows.Count) unfinished | $($script:app.Finished.Count) finished"
     if ($Persist) { Save-AppSession }
@@ -680,4 +705,5 @@ finally {
     $script:binding.Dispose(); $script:table.Dispose(); $script:form.Dispose()
     $script:rowMenu.Dispose(); $script:menu.Dispose()
     $script:statusFont.Dispose()
+    $script:toolTips.Dispose()
 }

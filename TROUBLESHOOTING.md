@@ -1,5 +1,29 @@
 # Troubleshooting
 
+## OS/.NET scope and ignored PFRO
+
+Only Software Center-visible Windows OS/.NET patches are in scope. Known other
+products are excluded by documented title rules. OS scope needs review means a
+visible title was not recognized; see ScopeAmbiguousUpdates before changing rules.
+The client API does not expose a documented product-category field.
+
+PFRO/PFRO2 are never read. A generic SCCM reboot flag cannot block PASS by itself.
+CBS, Windows Update, and scoped update reboot states remain authoritative. Run
+Reassess unfinished after upgrading to refresh old PFRO-only findings.
+
+NOT READY results show whether visible in-scope updates reported EvaluationState 13
+(Error). Unknown means the failure state could not be read, not that none failed.
+See FailedUpdates for names and available error codes. Excluded product failures
+are not labeled as OS/.NET failures.
+
+## Layout and individual progress
+
+Click a status total to filter the computer table. Collapse setup to reclaim space;
+the separate Checks pane stays visible. View > Show concurrent check progress
+toggles per-worker bars. Those bars represent observed assessment stages, not patch
+installation, and can remain on a stage while an endpoint responds. A marquee
+means no usable progress record has arrived. Scroll the worker area for more slots.
+
 ## Choosing the next action
 
 - Run initial assessment once for the input list.
