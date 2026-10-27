@@ -9,6 +9,7 @@
 
 # Generated tests, extracted distributions, and release packages stay local.
 /UI-Test-*/
+/ServerValidationTests-*/
 /ServerUpdateValidation-*/
 /release/
 *.zip

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.8 - 2026-10-27
+
+- Native File, Actions, View, and Help menus with familiar keyboard shortcuts.
+- Verification-only follow-up and an explicit Reassess unfinished action.
+- Skipped findings retain their full state in the GUI and tracking CSVs.
+- Validated campaign resume, local help, runtime About, and report-folder commands.
+- Row context menu copies computer name, status summary, or detailed results.
+- Filter checkmarks, details-pane toggle, and reset-view command.
+
 ## 1.0.7 - 2026-10-27
 
 - Export CSV captures the current filtered, searched, and sorted status table.

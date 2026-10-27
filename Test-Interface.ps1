@@ -34,6 +34,18 @@ function Invoke-InterfaceSmoke {
     $script:unfinishedPath.Box.Text = Join-Path $script:testFolder 'Unfinished.csv'
     $script:concurrency.Value = 2
     $script:form.Show()
+    if (($script:menu.Items | ForEach-Object Text) -join '|' -ne '&File|&Actions|&View|&Help') { throw 'Native menu structure is incomplete.' }
+    if ($script:menuItems['Export'].ShortcutKeys -ne [Windows.Forms.Keys]'Control,E' -or $script:menuItems['Guide'].ShortcutKeys -ne [Windows.Forms.Keys]::F1) { throw 'Menu shortcuts are missing.' }
+    if ($script:rowMenu.Items.Count -ne 3 -or -not $script:menuItems['Initial'].Enabled -or $script:menuItems['Verify'].Enabled) { throw 'Initial command state or row-copy menu is incorrect.' }
+    foreach ($topic in @('Guide','Troubleshooting','ReleaseNotes','About')) {
+        if ((Get-AppHelpText $topic).Length -lt 100) { throw "Missing help content: $topic" }
+    }
+    $gridHeight = $script:grid.Height
+    Invoke-AppCommand 'Details'
+    if ($script:detail.Visible -or $script:grid.Height -le $gridHeight -or $script:menuItems['Details'].Checked) { throw 'Hiding details must expand the status table and update the menu checkmark.' }
+    Invoke-AppCommand 'Details'
+    if (-not $script:detail.Visible -or $script:grid.Height -ne $gridHeight) { throw 'Restoring details did not restore the layout.' }
+    Write-Output 'PASS: native menus, shortcuts, local help, command availability, and details toggle'
     if ($script:filter.Text -ne 'Unfinished' -or $script:binding.Filter -ne "Status <> 'PASS'") { throw 'Unfinished must be the active default view.' }
     # Deliberately slow only the background writer. A separate GUI timer must
     # keep ticking while saves run, and no remote worker may bypass its checkpoint.
@@ -51,8 +63,9 @@ function Invoke-InterfaceSmoke {
     $script:form.Size = $savedSize
     [Windows.Forms.Application]::DoEvents()
     Write-Output 'PASS: themed controls, card grouping, and minimum-window layout'
-    Start-AppWave
+    $script:menuItems['Initial'].PerformClick()
     Invoke-AppTick
+    if ($script:menuItems['New'].Enabled -or $script:menuItems['Resume'].Enabled -or $script:menuItems['Verify'].Enabled -or -not $script:menuItems['Export'].Enabled) { throw 'Busy command state allows conflicting campaign operations.' }
     if (-not $script:app.ReportJob -or $script:app.Workers.Count -ne 0) { throw 'Dispatch must wait for its background checkpoint.' }
     # Render the real controls, not a generated UI mockup.
     [Windows.Forms.Application]::DoEvents()
@@ -66,12 +79,25 @@ function Invoke-InterfaceSmoke {
     if (@(Import-Csv -LiteralPath $script:app.UnfinishedPath).Count -ne 12) { throw 'First wave must retain all computers.' }
     if (@($script:app.Rows | Where-Object Status -eq 'VERIFICATION PENDING').Count -ne 4) { throw 'First wave did not request four synthetic scans.' }
     Write-Output 'PASS: actual GUI, runspace concurrency, first-wave reports'
+    $copyName = Get-AppCopyText 'CopyName'
+    $copySummary = Get-AppCopyText 'CopySummary'
+    $copyDetails = Get-AppCopyText 'CopyDetails'
+    if (-not $copyName -or $copySummary -notlike '*Last checked (UTC):*' -or $copySummary -like '*ClientService*' -or $copyDetails -notlike '*ClientService*') { throw 'Row-copy commands do not distinguish name, summary, and detailed evidence.' }
+    $skippedBefore = @{}
+    foreach ($row in $script:app.Rows | Where-Object Status -ne 'VERIFICATION PENDING') { $skippedBefore[$row.ComputerName] = ConvertTo-Json -InputObject $row -Compress }
 
     # Leave the original input untouched. The application must carry the saved
     # requests forward automatically, without any changes to paths or settings.
     $originalInput = $script:inputPath.Box.Text
-    Start-AppWave; Wait-DemoWave
-    if ($script:inputPath.Box.Text -ne $originalInput -or $script:startButton.Text -ne 'Run next wave') { throw 'Automatic wave continuation changed the inventory path or omitted the next-wave action.' }
+    $script:menuItems['Verify'].PerformClick(); Wait-DemoWave
+    if ($script:app.Done -ne 4 -or $script:app.WorkIndices.Count -ne 4) { throw 'Verification-only wave assessed non-pending computers.' }
+    foreach ($row in $script:app.Rows | Where-Object { $skippedBefore.ContainsKey($_.ComputerName) }) {
+        if ((ConvertTo-Json -InputObject $row -Compress) -ne $skippedBefore[$row.ComputerName]) { throw "Verification wave modified skipped finding: $($row.ComputerName)" }
+    }
+    foreach ($row in @(Read-ValidationInput $script:app.UnfinishedPath)) {
+        if ((ConvertTo-Json -InputObject $row -Compress) -ne $skippedBefore[$row.ComputerName]) { throw "Verification wave changed or lost a skipped CSV record: $($row.ComputerName)" }
+    }
+    if ($script:inputPath.Box.Text -ne $originalInput -or $script:startButton.Text -notlike 'Check pending*') { throw 'Automatic continuation changed the input path or omitted the verification action.' }
     if ($script:inputPath.Box.Enabled -or $script:unfinishedPath.Box.Enabled) { throw 'Campaign paths must remain locked until New list.' }
     if (@(Import-Csv -LiteralPath $script:app.FinishedPath).Count -ne 4) { throw 'Second wave must produce four PASS results.' }
     if (@(Import-Csv -LiteralPath $script:app.UnfinishedPath).Count -ne 8) { throw 'Second wave must retain eight unfinished computers.' }
@@ -82,12 +108,17 @@ function Invoke-InterfaceSmoke {
     if ($csvRows[0].UpdateScope -ne 'Software Center-visible SCCM updates' -or $csvRows[0].MissingCount -ne '0') { throw 'Report does not use Software Center-visible scope.' }
     if ($csvRows[0].PSObject.Properties.Name -contains 'UpdateStoreMissingCount') { throw 'Broader store fields must not appear in reports.' }
     Write-Output 'PASS: second-wave verification, same-file updates without prompts, formatted timestamps'
+    $reportStamp = [IO.File]::GetLastWriteTimeUtc($script:app.UnfinishedPath)
+    Start-AppWave
+    if ($script:app.Running -or [IO.File]::GetLastWriteTimeUtc($script:app.UnfinishedPath) -ne $reportStamp -or $script:footer.Text -notlike '*still require attention*') { throw 'No pending work must not rescan known findings or imply campaign completion.' }
+    Write-Output 'PASS: verification-only scope, unchanged skipped rows, and no-work attention summary'
     if ($script:binding.Count -ne 8) { throw 'Default unfinished view must hide the four PASS results.' }
     if ($script:heartbeatCount -lt 10) { throw 'UI message loop did not stay active during background saves.' }
     if ($script:app.Checkpoints -ge 24) { throw 'Checkpoints were not batched.' }
     Write-Output 'PASS: GUI heartbeat during delayed report writes, durable dispatch barrier, and batched checkpoints'
 
-    $script:filter.SelectedItem = 'PASS'
+    Invoke-AppCommand 'Filter|PASS'
+    if (-not $script:filterMenuItems['PASS'].Checked -or $script:filterMenuItems['Unfinished'].Checked) { throw 'View menu filter checks are out of sync.' }
     $script:binding.Sort = 'Computer DESC'
     $expectedNames = @($script:binding.List | ForEach-Object { $_.Row['Computer'] })
     $statusPath = Join-Path $script:testFolder 'Status.csv'
@@ -106,7 +137,8 @@ function Invoke-InterfaceSmoke {
     $blocked = $false
     try { Start-StatusExport $script:app.UnfinishedPath } catch { $blocked = $true }
     if (-not $blocked) { throw 'Display exports must not overwrite tracking reports.' }
-    $script:search.Clear(); $script:filter.SelectedItem = 'Unfinished'; $script:binding.Sort = ''
+    Invoke-AppCommand 'ResetView'
+    if ($script:filter.Text -ne 'Unfinished' -or $script:search.Text -or $script:binding.Sort) { throw 'Reset view failed to restore default filtering/search/sort.' }
     Write-Output 'PASS: filtered/sorted snapshot export, search, empty view, and tracking-file protection'
 
     # Simulate reopening the application with only its saved local settings.
@@ -114,7 +146,18 @@ function Invoke-InterfaceSmoke {
     Restore-AppSession
     if (-not $script:app.CampaignStarted -or $script:app.Rows.Count -ne 8 -or $script:app.Finished.Count -ne 4) { throw 'Saved campaign did not restore the remaining queue and finished results.' }
     if (([IO.File]::ReadAllText($script:app.SessionPath)) -match 'Password|Credential') { throw 'Session file contains credential fields.' }
-    Start-AppWave; Wait-DemoWave
+    $badSession = Join-Path $script:testFolder 'Invalid-Session.json'
+    $badSettings = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($script:app.SessionPath))
+    $badSettings.UnfinishedPath = Join-Path $script:testFolder 'Missing.csv'
+    [IO.File]::WriteAllText($badSession,(ConvertTo-Json -InputObject $badSettings))
+    $blocked = $false
+    try { Restore-AppSession -Path $badSession -Persist } catch { $blocked = $true }
+    if (-not $blocked -or $script:app.Rows.Count -ne 8 -or $script:app.Finished.Count -ne 4 -or $script:app.RecoveryFailed) { throw 'Invalid resume must preserve the current campaign.' }
+    $importedSession = Join-Path $script:testFolder 'Imported-Session.json'
+    Copy-Item -LiteralPath $script:app.SessionPath -Destination $importedSession
+    Restore-AppSession -Path $importedSession -Persist
+    if ($script:inputPath.Box.Text -ne $originalInput -or -not [IO.File]::Exists($script:app.SessionPath)) { throw 'Explicit resume did not retain settings for restart.' }
+    $script:menuItems['Reassess'].PerformClick(); Wait-DemoWave
     if ($script:app.Done -ne 8 -or @($script:app.Rows | Where-Object Status -eq 'PASS').Count) { throw 'Later wave rechecked finished computers.' }
     if ($script:table.Rows.Count -ne 12) { throw 'Finished computers must remain viewable.' }
     if ($script:statusCountLabels['PASS'].Text -ne '4  PASS') { throw 'PASS summary must retain the campaign finished count.' }
@@ -122,6 +165,26 @@ function Invoke-InterfaceSmoke {
     try { $script:form.DrawToBitmap($bitmap,[Drawing.Rectangle]::new(0,0,$bitmap.Width,$bitmap.Height)); $bitmap.Save((Join-Path $script:testFolder 'GUI-preview.png')) }
     finally { $bitmap.Dispose() }
     Write-Output 'PASS: session recovery, original input unchanged, finished computers excluded from later waves but viewable'
+
+    # Simulate resolving one known issue. Reassessment discovers its clean state
+    # and creates a request; only the following verification wave may pass it.
+    $savedWorker = $script:workerSource
+    $remediated = @'
+        if ($Name -eq 'SRV-APP01') {
+            if ($r.ScanRequestedAtUtc) { $r.Status = 'PASS'; $r.Verification = 'DEMO CONFIRMED'; $r.Reason = 'DEMO: remediation verified.' }
+            else { $r.Status = 'VERIFICATION PENDING'; $r.ScanRequestedAtUtc = $r.CheckedAtUtc; $r.Verification = 'DEMO REQUESTED'; $r.Reason = 'DEMO: remediation requires verification.' }
+            return $r
+        }
+        switch ($number % 6) {
+'@
+    $script:workerSource = $script:workerSource.Replace('switch ($number % 6) {',$remediated)
+    if ($script:workerSource -eq $savedWorker) { throw 'Remediation test worker was not injected.' }
+    Start-AppWave -Mode Unfinished; Wait-DemoWave
+    if ($script:app.Done -ne 8 -or @($script:app.Rows | Where-Object Status -eq 'VERIFICATION PENDING').Count -ne 1) { throw 'Reassessment must rediscover the remediated computer without passing it immediately.' }
+    Start-AppWave; Wait-DemoWave
+    if ($script:app.Done -ne 1 -or $script:app.Finished.Count -ne 5 -or @(Import-Csv -LiteralPath $script:app.UnfinishedPath).Count -ne 7) { throw 'Verification after remediation assessed other known findings or failed to finish the remediated computer.' }
+    $script:workerSource = $savedWorker
+    Write-Output 'PASS: explicit resume validation and remediation -> reassessment -> verification workflow'
 
     # An empty unfinished report means completion, not a reset to the inventory.
     foreach ($row in $script:app.Rows) { $row.Status = 'PASS' }
@@ -198,7 +261,7 @@ function Invoke-InterfaceSmoke {
 $source = [IO.File]::ReadAllText((Join-Path $testRoot 'Start-ServerUpdateValidation.ps1'))
 # Load trusted local helper text in-memory for this test harness only. No execution
 # policy settings are changed, and the production launcher uses ordinary -File.
-foreach ($helperName in @('Validation.Core.ps1','UI.Theme.ps1')) {
+foreach ($helperName in @('Validation.Core.ps1','UI.Theme.ps1','UI.Commands.ps1')) {
     $source = $source.Replace(". (Join-Path `$PSScriptRoot '$helperName')", ". ([scriptblock]::Create([IO.File]::ReadAllText((Join-Path `$PSScriptRoot '$helperName'))))")
 }
 $source = $source.Replace('$PSScriptRoot',("'" + $testRoot.Replace("'","''") + "'"))

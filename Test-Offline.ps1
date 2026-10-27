@@ -23,6 +23,17 @@ $sources = @([pscustomobject]@{ Id = 'SOURCE-A'; Version = '7' })
 $baseline = @([pscustomobject]@{ Id = 'SOURCE-A'; Version = '7'; CompletedUtc = '2026-01-01T00:00:00Z' })
 $history = @([pscustomobject]@{ Id = 'SOURCE-A'; Version = '7'; Valid = $true; CompletedUtc = '2026-01-01T02:00:00Z' })
 $r = New-ValidationRow 'SERVER01'
+$selectionRows = @(
+    foreach ($status in @('VERIFICATION PENDING','ACTION REQUIRED','UNABLE TO DETERMINE','NOT READY','QUEUED','PASS')) {
+        $item = New-ValidationRow ('SELECT-' + [guid]::NewGuid().ToString('N'))
+        $item.Status = $status; $item.Reason = 'Preserve this finding'; $item.CheckedAtUtc = '2026-10-27T12:00:00Z'; $item
+    }
+)
+$selectionBefore = ConvertTo-Json -InputObject $selectionRows -Compress
+Assert-Equal (@(Get-ValidationWorkIndices $selectionRows 'Verification') -join ',') '0' 'Verification wave selects only verification-pending computers'
+Assert-Equal (@(Get-ValidationWorkIndices $selectionRows 'Unfinished') -join ',') '0,1,2,3,4' 'Reassessment selects every unfinished status and excludes PASS'
+Assert-Equal @(Get-ValidationWorkIndices $selectionRows 'Initial').Count 6 'Explicit initial assessment selects the full input list'
+Assert-Equal (ConvertTo-Json -InputObject $selectionRows -Compress) $selectionBefore 'Choosing wave scope does not modify skipped findings or timestamps'
 Assert-Equal (Test-ScanVerification $r $sources $history '2025-12-31T00:00:00Z') 'NO REQUEST' 'Initial clear assessment cannot pass'
 $r.ScanRequestedAtUtc = '2026-01-01T01:00:00Z'; $r.ScanRequestBootUtc = '2025-12-31T00:00:00Z'
 $r.ScanBaselineJson = ConvertTo-Json -InputObject $baseline -Compress
@@ -134,6 +145,21 @@ try {
     $nextWave[0].Status = 'PASS'; Save-WaveReports $nextWave $finished $finishedPath $unfinishedPath
     Assert-Equal @(Import-Csv -LiteralPath $finishedPath).Count 2 'Finished report accumulates PASS rows'
     Assert-Equal @(Import-Csv -LiteralPath $unfinishedPath).Count 0 'Empty unfinished report retains valid header'
+    Assert-Equal @(Read-ValidationInput $unfinishedPath -AllowEmpty).Count 0 'Campaign recovery accepts a valid completed report'
+    $sessionPath = Join-Path $folder 'session.json'
+    $session = [ordered]@{ Version = 1; InputPath = $inputPath; FinishedPath = $finishedPath; UnfinishedPath = $unfinishedPath; Concurrency = 8 }
+    [IO.File]::WriteAllText($sessionPath,(ConvertTo-Json -InputObject $session))
+    $campaign = Read-ValidationCampaign $sessionPath
+    Assert-Equal $campaign.Finished.Count 2 'Campaign import restores accumulated finished computers'
+    Assert-Equal $campaign.Rows.Count 0 'Campaign import preserves completed state'
+    $session.Concurrency = 100
+    [IO.File]::WriteAllText($sessionPath,(ConvertTo-Json -InputObject $session))
+    $rejected = $false; try { Read-ValidationCampaign $sessionPath | Out-Null } catch { $rejected = $true }
+    Assert-Equal $rejected $true 'Campaign import rejects out-of-range settings before switching state'
+    $session.Concurrency = 8; $session.UnfinishedPath = $finishedPath
+    [IO.File]::WriteAllText($sessionPath,(ConvertTo-Json -InputObject $session))
+    $rejected = $false; try { Read-ValidationCampaign $sessionPath | Out-Null } catch { $rejected = $true }
+    Assert-Equal $rejected $true 'Campaign import rejects conflicting report paths'
     Assert-Equal ([IO.File]::Exists($finishedPath + '.bak')) $true 'Previous snapshot backed up'
     $nextWave[0].Status = 'ACTION REQUIRED'; Save-WaveReports $nextWave $finished $finishedPath $unfinishedPath
     Assert-Equal @(Import-Csv -LiteralPath $finishedPath).Count 1 'New adverse result removes earlier PASS'

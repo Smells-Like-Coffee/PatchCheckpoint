@@ -1,4 +1,20 @@
-# Build 1.0.7 - 2026-10-27
+# Build 1.0.8 - 2026-10-27
+
+## Changes from 1.0.7
+
+- Added File, Actions, View, and Help menus, keyboard shortcuts, row-copy context
+  menu, local help windows, report-folder shortcuts, and version/runtime About.
+- Added UI.Commands.ps1 and TROUBLESHOOTING.md using built-in Windows Forms only.
+- Primary follow-up checks only VERIFICATION PENDING computers. Reassess unfinished
+  explicitly checks every remaining computer after remediation. PASS stays finished.
+- Work indices are separate from the full campaign data. Skipped results remain in
+  the GUI and CSV unchanged, including their reasons, timestamps, and scan tracking.
+- No pending verification reports an attention count rather than declaring the
+  campaign complete. Progress counts only work selected for that wave.
+- Resume campaign validates all settings and reports before switching, and saves
+  local paths without credentials. Header-only report readers dispose their streams.
+- Extended offline and GUI tests for wave selection, skipped CSV records, menus,
+  shortcuts, help, view toggles, resume validation, and explicit remediation flow.
 
 ## Changes from 1.0.6
 
@@ -121,7 +137,7 @@ does not include the earlier deleted prototype.
 
 Executed under Windows PowerShell 5.1 on Windows:
 
-- 56 core assertions: scan baselines, boot/catalog changes, malformed/missing evidence,
+- 65 core assertions: scan baselines, boot/catalog changes, malformed/missing evidence,
   formula escaping, CSV round trips, PASS accumulation/removal, header-only output,
   snapshots, duplicate/IP rejection, and exclusive file locks.
   Includes requested timestamp format, UTC conversion, exact-value round trips,
@@ -139,7 +155,7 @@ Executed under Windows PowerShell 5.1 on Windows:
   Second wave reused the same existing output files without an update prompt;
   both exported and displayed timestamp formats were checked.
   Visible-update column labeling and removal of broader-store fields were checked.
-- All seven PowerShell files parsed successfully. The actual rendered GUI was visually
+- All eight PowerShell files parsed successfully. The actual rendered GUI was visually
   inspected; GUI-preview.png is a synthetic run of this build, not the concept image.
 - Packaged file hashes and archive contents were checked during release packaging.
 

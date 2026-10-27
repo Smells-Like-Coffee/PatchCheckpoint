@@ -24,6 +24,8 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$script:AppVersion = '1.0.8'
+$script:ProjectRoot = $PSScriptRoot
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or -not [Environment]::Is64BitProcess -or
     [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
     throw 'Use 64-bit Windows PowerShell 5.1 with -STA. See Launch.cmd.'
@@ -32,6 +34,7 @@ Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 [Windows.Forms.Application]::EnableVisualStyles()
 . (Join-Path $PSScriptRoot 'Validation.Core.ps1')
 . (Join-Path $PSScriptRoot 'UI.Theme.ps1')
+. (Join-Path $PSScriptRoot 'UI.Commands.ps1')
 $script:app = @{
     Rows = @(); Finished = @{}; Workers = (New-Object System.Collections.ArrayList)
     Credential = $null; Pool = $null; Running = $false; Stopping = $false
@@ -46,6 +49,8 @@ $script:app = @{
     LastProgressMs = -1000; ProgressDirty = $true; ExportJob = $null; ExportNotice = ''
     Checkpoints = 0
     StatusCounts = @{}
+    WorkIndices = @(); WaveMode = 'Initial'; DetailsVisible = $true
+    RecoveryFailed = $false
 }
 
 # Workers have no GUI references. All remote invocation and waiting occurs away
@@ -145,22 +150,25 @@ function Load-AppRows {
     # The original inventory is read only before the campaign starts. Subsequent
     # waves load the durable unfinished report, preserving exact scan boundaries.
     if ($script:app.CampaignStarted) {
-        $items = @(Import-Csv -LiteralPath $script:app.UnfinishedPath -ErrorAction Stop)
-        if ($items.Count) { $script:app.Rows = @(Read-ValidationInput $script:app.UnfinishedPath) }
-        else {
-            $header = [IO.File]::ReadLines($script:app.UnfinishedPath) | Select-Object -First 1
-            if ($header -notlike '*"TrackingJson"*' -or $header -notlike '*"ComputerName"*') { throw 'Unfinished report header is invalid.' }
-            $script:app.Rows = @()
-        }
+        $script:app.Rows = @(Read-ValidationInput $script:app.UnfinishedPath -AllowEmpty)
     }
     else { $script:app.Rows = @(Read-ValidationInput $script:inputPath.Box.Text) }
+    Refresh-AppTable
+    if (-not $script:app.Running) {
+        $script:app.WorkIndices = @(); $script:app.Next = 0; $script:app.Done = 0
+        Update-AppProgress
+        $script:summary.Text = "$($script:app.Rows.Count) unfinished | $($script:app.Finished.Count) finished"
+    }
+    $script:footer.Text = "Loaded $($script:app.Rows.Count) computers. No server actions started."
+}
+
+function Refresh-AppTable {
     # Rebuild once rather than raising selection/filter events for every added row.
     $script:binding.RaiseListChangedEvents = $false
     try {
         $script:table.Clear(); $activeNames = @{}
         foreach ($row in $script:app.Rows) {
             $activeNames[$row.ComputerName] = $true
-            $row.Status = 'QUEUED'; $row.Reason = 'Waiting for a worker'
             [void]$script:table.Rows.Add($row.ComputerName,$row.Status,$row.Reason,[string]$row.MissingCount,$row.RebootPending,(Format-ValidationTimestamp $row.CheckedAtUtc))
         }
         # Finished computers remain viewable but are never queued in later waves.
@@ -171,7 +179,6 @@ function Load-AppRows {
         }
     }
     finally { $script:binding.RaiseListChangedEvents = $true; $script:binding.ResetBindings($false) }
-    $script:footer.Text = "Loaded $($script:app.Rows.Count) computers. No server actions started."
 }
 
 # Persist paths and concurrency only. Credentials are deliberately memory-only.
@@ -194,15 +201,20 @@ function Reset-AppCampaign {
     if ([IO.File]::Exists($script:app.SessionPath)) { [IO.File]::Delete($script:app.SessionPath) }
     if ([IO.File]::Exists($script:app.SessionPath + '.bak')) { [IO.File]::Delete($script:app.SessionPath + '.bak') }
     $script:app.CampaignStarted = $false; $script:app.Rows = @(); $script:app.Finished = @{}
+    $script:app.WorkIndices = @(); $script:app.Next = 0; $script:app.Done = 0
+    $script:app.RecoveryFailed = $false
+    $script:app.Clock.Reset()
     $script:table.Clear(); $script:detail.Clear()
     $script:startButton.Text = 'Start wave'; $script:loadButton.Text = 'Load list'
     Set-SetupEnabled $true
+    Update-AppProgress
+    $script:summary.Text = 'Load an input CSV to begin.'
     $script:footer.Text = 'New list: select input and report paths. Previous reports are preserved.'
 }
 function Update-AppProgress {
     $running = $script:app.Workers.Count
-    $queued = $script:app.Rows.Count - $script:app.Next + $script:app.PendingDispatch.Count
-    $total = $script:app.Rows.Count
+    $queued = $script:app.WorkIndices.Count - $script:app.Next + $script:app.PendingDispatch.Count
+    $total = $script:app.WorkIndices.Count
     $script:progress.Maximum = [math]::Max(1,$total); $script:progress.Value = $script:app.Done
     $script:summary.Text = "$total in wave | $($script:app.Done) checked | $running active | $queued queued"
     $script:app.StatusCounts = @{}
@@ -291,6 +303,7 @@ function Start-StatusExport {
     try {
         $script:app.ExportJob = [pscustomobject]@{ PowerShell = $ps; Handle = $ps.BeginInvoke(); Path = $target; Count = $snapshot.Count }
         $script:exportButton.Enabled = $false; $script:app.ExportNotice = 'Export in progress'
+        Update-AppCommandState
         $script:timer.Start()
     }
     catch { $ps.Dispose(); throw }
@@ -306,7 +319,7 @@ function Complete-StatusExport {
         $script:footer.Text = $script:app.ExportNotice
     }
     catch { $script:app.ExportNotice = 'Export failed'; Show-AppError $_.Exception.Message }
-    finally { $job.PowerShell.Dispose(); $script:app.ExportJob = $null; $script:exportButton.Enabled = $true }
+    finally { $job.PowerShell.Dispose(); $script:app.ExportJob = $null; $script:exportButton.Enabled = $true; Update-AppCommandState }
 }
 function Set-SetupEnabled {
     param([bool]$Enabled)
@@ -314,9 +327,11 @@ function Set-SetupEnabled {
     $script:stopButton.Enabled = -not $Enabled
     if ($script:app.CampaignStarted) {
         foreach ($pathControl in @($script:inputPath,$script:finishedPath,$script:unfinishedPath)) { $pathControl.Box.Enabled = $false; $pathControl.Button.Enabled = $false }
-        $script:startButton.Text = 'Run next wave'; $script:loadButton.Text = 'New list'
+        $script:startButton.Text = "Check pending`r`nverification"; $script:loadButton.Text = 'New list'
     }
+    $script:reassessButton.Enabled = $Enabled -and $script:app.CampaignStarted -and -not $script:app.FatalSave
     if ($Demo) { $script:credentialButton.Enabled = $false }
+    Update-AppCommandState
 }
 function Release-AppResources {
     if ($script:app.Pool) { $script:app.Pool.Close(); $script:app.Pool.Dispose(); $script:app.Pool = $null }
@@ -326,12 +341,22 @@ function Release-AppResources {
 }
 
 function Start-AppWave {
+    param([ValidateSet('','Initial','Verification','Unfinished')][string]$Mode = '')
     if ($script:app.Running) { return }
     if ($script:app.FatalSave) { throw 'The previous wave had a report error. Resolve it and reopen the application before continuing.' }
     if (-not $Demo -and -not $script:app.Credential) { throw 'Set remote credentials before starting.' }
+    if (-not $Mode) { $Mode = if ($script:app.CampaignStarted) { 'Verification' } else { 'Initial' } }
+    if ($Mode -eq 'Initial' -and $script:app.CampaignStarted) { throw 'Use New campaign before another initial assessment.' }
+    if ($Mode -ne 'Initial' -and -not $script:app.CampaignStarted) { throw 'Run the initial assessment first.' }
     Load-AppRows
     if ($script:app.CampaignStarted -and -not $script:app.Rows.Count) {
         $script:footer.Text = 'Campaign complete. All computers have passed; no server actions started.'
+        return
+    }
+    $script:app.WorkIndices = @(Get-ValidationWorkIndices $script:app.Rows $Mode)
+    $script:app.WaveMode = $Mode
+    if (-not $script:app.WorkIndices.Count) {
+        $script:footer.Text = "No verification pending. $($script:app.Rows.Count) computers still require attention. Use Reassess unfinished after remediation."
         return
     }
     $input = [IO.Path]::GetFullPath($script:inputPath.Box.Text)
@@ -427,8 +452,7 @@ function Invoke-AppTick {
         if ($script:app.Stopping -and $script:app.PendingDispatch.Count) {
             foreach ($pending in $script:app.PendingDispatch.ToArray()) {
                 $script:app.Rows[$pending.Index] = $pending.Original
-                $script:app.Rows[$pending.Index].Status = 'QUEUED'
-                $script:app.Rows[$pending.Index].Reason = 'Stopped before dispatch'
+                if ($pending.Original.Status -eq 'QUEUED') { $script:app.Rows[$pending.Index].Reason = 'Stopped before dispatch' }
                 Update-GridRow $pending.Index
             }
             $script:app.PendingDispatch.Clear(); $script:app.ReportsDirty = $true
@@ -451,8 +475,8 @@ function Invoke-AppTick {
         # Nothing in this batch starts until that background save has succeeded.
         if (-not $script:app.Stopping -and -not $script:app.ReportJob -and -not $script:app.PendingDispatch.Count) {
             $slots = [int]$script:concurrency.Value - $script:app.Workers.Count
-            while ($slots -gt 0 -and $script:app.Next -lt $script:app.Rows.Count) {
-                $index = $script:app.Next; $original = ConvertTo-ValidationRow $script:app.Rows[$index]
+            while ($slots -gt 0 -and $script:app.Next -lt $script:app.WorkIndices.Count) {
+                $index = $script:app.WorkIndices[$script:app.Next]; $original = ConvertTo-ValidationRow $script:app.Rows[$index]
                 $row = $script:app.Rows[$index]
                 $row.Status = 'CHECKING'; $row.Reason = 'Saving checkpoint before assessment'
                 if (-not $row.ScanRequestedAtUtc) { $row.Verification = 'ATTEMPT IN PROGRESS' }
@@ -467,12 +491,16 @@ function Invoke-AppTick {
             Update-AppProgress
             $script:app.LastProgressMs = $script:app.Clock.ElapsedMilliseconds; $script:app.ProgressDirty = $false
         }
-        if (($script:app.Next -eq $script:app.Rows.Count -or $script:app.Stopping) -and -not $script:app.Workers.Count -and -not $script:app.PendingDispatch.Count -and -not $script:app.ReportJob -and (-not $script:app.ReportsDirty -or $script:app.FatalSave)) {
+        if (($script:app.Next -eq $script:app.WorkIndices.Count -or $script:app.Stopping) -and -not $script:app.Workers.Count -and -not $script:app.PendingDispatch.Count -and -not $script:app.ReportJob -and (-not $script:app.ReportsDirty -or $script:app.FatalSave)) {
             Update-AppProgress
             if (-not $script:app.ExportJob) { $script:timer.Stop() }
             $script:app.Clock.Stop(); $script:app.Running = $false
             Release-AppResources; Set-SetupEnabled $true
-            $script:footer.Text += " | $($script:app.Finished.Count) finished; $(@($script:app.Rows | Where-Object Status -ne 'PASS').Count) remaining. Run next wave to continue."
+            $remaining = @($script:app.Rows | Where-Object Status -ne 'PASS').Count
+            $pendingCount = @($script:app.Rows | Where-Object Status -eq 'VERIFICATION PENDING').Count
+            $script:footer.Text = if (-not $remaining) { "Campaign complete. $($script:app.Finished.Count) computers passed." }
+                elseif (-not $pendingCount) { "Verification checks complete. $remaining computers still require attention. Use Reassess unfinished after remediation." }
+                else { "$($script:app.Finished.Count) finished; $pendingCount verification pending; $($remaining - $pendingCount) require attention." }
             if ($script:app.FatalSave) { $script:footer.Text = 'Report error: wave stopped. Recent results may be unsaved. Resolve the error and reopen the application.' }
             if ($script:app.Closing) { $script:app.AllowClose = $true; $script:form.Close() }
         }
@@ -489,7 +517,7 @@ function Invoke-AppTick {
 
 # Build a resizable, keyboard-accessible desktop layout using only built-in .NET.
 $script:form = [Windows.Forms.Form]::new()
-$script:form.Text = 'Server Update Validation 1.0.7' + $(if ($Demo) { ' [OFFLINE DEMO]' } else { '' })
+$script:form.Text = 'Server Update Validation ' + $script:AppVersion + $(if ($Demo) { ' [OFFLINE DEMO]' } else { '' })
 $script:form.ClientSize = [Drawing.Size]::new(1040,750); $script:form.MinimumSize = [Drawing.Size]::new(1056,789)
 $script:form.StartPosition = 'CenterScreen'; $script:form.Font = [Drawing.Font]::new('Segoe UI',10)
 $script:form.BackColor = [Drawing.Color]::FromArgb(247,249,252)
@@ -503,6 +531,7 @@ $script:accountLabel = New-Label 'Account: not set' 180 183 380
 $script:concurrency = [Windows.Forms.NumericUpDown]::new(); $script:concurrency.SetBounds(728,180,65,28)
 $script:concurrency.Minimum = 1; $script:concurrency.Maximum = 32; $script:concurrency.Value = 8; $script:form.Controls.Add($script:concurrency)
 $script:loadButton = New-Button 'Load list' 18 218 110
+$script:reassessButton = New-Button 'Reassess unfinished' 485 218 180; $script:reassessButton.Enabled = $false
 $script:startButton = New-Button 'Start wave' 140 218 120
 $script:startButton.BackColor = [Drawing.Color]::FromArgb(0,105,190); $script:startButton.ForeColor = [Drawing.Color]::White
 $script:stopButton = New-Button 'Stop after active checks' 272 218 205; $script:stopButton.Enabled = $false
@@ -559,13 +588,9 @@ $script:unfinishedPath.Button.Add_Click({
 $script:credentialButton.Add_Click({ try { Set-AppCredential } catch { Show-AppError $_.Exception.Message } })
 $script:loadButton.Add_Click({ try { if ($script:loadButton.Text -eq 'New list') { Reset-AppCampaign } else { Load-AppRows } } catch { Show-AppError $_.Exception.Message } })
 $script:startButton.Add_Click({ try { Start-AppWave } catch { Show-AppError $_.Exception.Message } })
-$script:stopButton.Add_Click({ $script:app.Stopping = $true; $script:stopButton.Enabled = $false })
-$script:exportButton.Add_Click({
-    $dialog = [Windows.Forms.SaveFileDialog]::new()
-    $dialog.Filter = 'CSV files (*.csv)|*.csv'; $dialog.DefaultExt = 'csv'; $dialog.FileName = 'Computer-Status.csv'
-    try { if ($dialog.ShowDialog($script:form) -eq 'OK') { Start-StatusExport $dialog.FileName } }
-    catch { Show-AppError $_.Exception.Message } finally { $dialog.Dispose() }
-})
+$script:reassessButton.Add_Click({ Invoke-AppCommand 'Reassess' })
+$script:stopButton.Add_Click({ Invoke-AppCommand 'Stop' })
+$script:exportButton.Add_Click({ Invoke-AppCommand 'Export' })
 $script:grid.Add_SelectionChanged({
     if ($script:grid.SelectedRows.Count) {
         $name = [string]$script:grid.SelectedRows[0].Cells['Computer'].Value
@@ -597,6 +622,7 @@ $applyFilter = {
     try { $script:binding.Filter = $parts -join ' AND ' } catch { $script:footer.Text = 'Search contains an unsupported filter character.' }
 }
 $script:filter.Add_SelectedIndexChanged($applyFilter); $script:search.Add_TextChanged($applyFilter)
+$script:filter.Add_SelectedIndexChanged({ Update-AppCommandState })
 & $applyFilter
 $script:timer = [Windows.Forms.Timer]::new(); $script:timer.Interval = 150; $script:timer.Add_Tick({ Invoke-AppTick })
 $script:form.Add_FormClosing({
@@ -612,6 +638,7 @@ $script:form.Add_FormClosing({
 # explanations while remaining usable on smaller displays at the minimum size.
 $script:form.ClientSize = [Drawing.Size]::new(1200,850)
 Set-ValidationTheme
+Initialize-AppMenus
 if ($Demo) {
     $script:credentialButton.Enabled = $false; $script:accountLabel.Text = 'OFFLINE DEMO - no credentials or server actions'
     $script:inputPath.Box.Text = Join-Path $PSScriptRoot 'Computers.example.csv'
@@ -621,32 +648,28 @@ if ($Demo) {
 }
 # Resume local campaign settings without storing credentials or triggering work.
 function Restore-AppSession {
-    if (-not [IO.File]::Exists($script:app.SessionPath)) { return }
-    try {
-        $saved = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($script:app.SessionPath)) -ErrorAction Stop
-        if ($saved.Version -ne 1 -or $saved.Concurrency -lt 1 -or $saved.Concurrency -gt 32) { throw 'Invalid session settings.' }
-        foreach ($reportPath in @($saved.FinishedPath,$saved.UnfinishedPath)) {
-            if (-not [IO.File]::Exists($reportPath) -or [IO.Path]::GetExtension($reportPath) -ne '.csv') { throw 'Saved report is missing or invalid.' }
-        }
-        $script:inputPath.Box.Text = $saved.InputPath
-        $script:finishedPath.Box.Text = $saved.FinishedPath; $script:app.FinishedPath = $saved.FinishedPath
-        $script:unfinishedPath.Box.Text = $saved.UnfinishedPath; $script:app.UnfinishedPath = $saved.UnfinishedPath
-        $script:concurrency.Value = $saved.Concurrency
-        foreach ($old in @(Import-Csv -LiteralPath $saved.FinishedPath)) {
-            if ($old.Status -ne 'PASS') { throw 'Saved finished report contains a non-PASS row.' }
-            $script:app.Finished[$old.ComputerName] = ConvertTo-ValidationRow $old
-        }
-        $script:app.CampaignStarted = $true
-        Load-AppRows; Set-SetupEnabled $true
-        $script:footer.Text = 'Campaign restored. Set credentials, then run the next wave. No server actions started.'
-    }
-    catch {
-        $script:app.CampaignStarted = $false; $script:app.Finished = @{}
-        $script:footer.Text = 'Saved campaign could not be restored: ' + $_.Exception.Message
-        $script:startButton.Enabled = $false; $script:loadButton.Text = 'New list'
-    }
+    param([string]$Path = $script:app.SessionPath,[switch]$Persist)
+    if (-not [IO.File]::Exists($Path) -and -not $Persist) { return }
+    $campaign = Read-ValidationCampaign $Path
+    $saved = $campaign.Settings
+    $script:inputPath.Box.Text = $saved.InputPath
+    $script:finishedPath.Box.Text = $saved.FinishedPath; $script:app.FinishedPath = $saved.FinishedPath
+    $script:unfinishedPath.Box.Text = $saved.UnfinishedPath; $script:app.UnfinishedPath = $saved.UnfinishedPath
+    $script:concurrency.Value = $saved.Concurrency
+    $script:app.Finished = $campaign.Finished; $script:app.Rows = $campaign.Rows
+    $script:app.WorkIndices = @(); $script:app.Next = 0; $script:app.Done = 0; $script:app.Clock.Reset()
+    $script:app.CampaignStarted = $true; $script:app.RecoveryFailed = $false
+    Refresh-AppTable; Set-SetupEnabled $true; Update-AppProgress
+    $script:summary.Text = "$($script:app.Rows.Count) unfinished | $($script:app.Finished.Count) finished"
+    if ($Persist) { Save-AppSession }
+    $script:footer.Text = 'Campaign restored. Set credentials if needed, then check pending verification or reassess unfinished. No server actions started.'
 }
-Restore-AppSession
+try { Restore-AppSession }
+catch {
+    $script:app.RecoveryFailed = $true
+    $script:footer.Text = 'Saved campaign could not be restored: ' + $_.Exception.Message
+    $script:loadButton.Text = 'New list'; Update-AppCommandState
+}
 try { [Windows.Forms.Application]::Run($script:form) }
 finally {
     $script:timer.Stop(); $script:timer.Dispose()
@@ -655,5 +678,6 @@ finally {
     Release-AppResources
     if ($script:app.Credential) { $script:app.Credential.Password.Dispose() }
     $script:binding.Dispose(); $script:table.Dispose(); $script:form.Dispose()
+    $script:rowMenu.Dispose(); $script:menu.Dispose()
     $script:statusFont.Dispose()
 }

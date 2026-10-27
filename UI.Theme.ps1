@@ -167,7 +167,7 @@ function Set-ValidationTheme {
     $script:form.Font = [Drawing.Font]::new('Segoe UI',10)
     $title.ForeColor = [Drawing.Color]::FromArgb(10,34,69)
     $title.Font = [Drawing.Font]::new('Segoe UI',22,[Drawing.FontStyle]::Bold)
-    $title.SetBounds(24,12,1000,44)
+    $title.SetBounds(24,40,1000,44)
     $script:setupCard = [ValidationUI.Card]::new(); $script:form.Controls.Add($script:setupCard)
     $script:progressCard = [ValidationUI.Card]::new(); $script:form.Controls.Add($script:progressCard)
     $script:resultsCard = [ValidationUI.Card]::new(); $script:form.Controls.Add($script:resultsCard)
@@ -181,7 +181,7 @@ function Set-ValidationTheme {
         $path.Label.BackColor = [Drawing.Color]::Transparent
         $path.Box.BorderStyle = 'FixedSingle'; $path.Box.BackColor = [Drawing.Color]::FromArgb(253,254,255)
     }
-    foreach ($c in @($script:credentialButton,$script:accountLabel,$script:concurrency,$script:loadButton,$script:startButton,$script:stopButton,$concurrentLabel)) {
+    foreach ($c in @($script:credentialButton,$script:accountLabel,$script:concurrency,$script:loadButton,$script:reassessButton,$script:startButton,$script:stopButton,$concurrentLabel)) {
         $c.Parent = $script:setupCard; $c.Anchor = 'Top,Left'
     }
     $script:accountLabel.BackColor = [Drawing.Color]::Transparent
@@ -251,8 +251,8 @@ function Set-ValidationTheme {
     # Store semantic labels for the resize handler; it does not capture temporary
     # local variables through a PowerShell closure.
     $script:themeConcurrentLabel = $concurrentLabel; $script:themeSearchLabel = $searchLabel
-    $script:form.MinimumSize = [Drawing.Size]::new(1166,859)
-    $script:form.ClientSize = [Drawing.Size]::new(1320,940)
+    $script:form.MinimumSize = [Drawing.Size]::new(1166,887)
+    $script:form.ClientSize = [Drawing.Size]::new(1320,968)
     $script:form.Add_Resize({ Set-ValidationThemeLayout })
     Set-ValidationThemeLayout
     $script:form.ResumeLayout($true)
@@ -260,7 +260,7 @@ function Set-ValidationTheme {
 
 function Set-ValidationThemeLayout {
     $w = $script:form.ClientSize.Width; $h = $script:form.ClientSize.Height; $cw = $w - 36
-    $script:setupCard.SetBounds(18,64,$cw,232)
+    $script:setupCard.SetBounds(18,92,$cw,232)
     $split = $cw - 392
     $index = 0
     foreach ($path in @($script:inputPath,$script:finishedPath,$script:unfinishedPath)) {
@@ -277,21 +277,24 @@ function Set-ValidationThemeLayout {
     $script:startButton.SetBounds($right,102,142,47)
     $script:stopButton.SetBounds(($right + 152),102,192,47)
     $script:loadButton.SetBounds($right,164,110,34)
+    $script:reassessButton.SetBounds(($right + 120),164,224,34)
     $script:accountLabel.SetBounds(20,184,390,28)
     $script:credentialButton.SetBounds(424,178,155,35)
-    $script:progressCard.SetBounds(18,310,$cw,146)
+    $script:progressCard.SetBounds(18,338,$cw,146)
     $progressWidth = [int]($cw * 0.39)
     $script:progress.SetBounds(20,62,$progressWidth,22)
     $script:percentLabel.SetBounds(($progressWidth + 30),60,55,28)
     $script:summary.SetBounds(($progressWidth + 100),59,($cw - $progressWidth - 120),30)
     $script:badgeFlow.SetBounds(20,105,($cw - 40),32)
-    $rh = $h - 514
-    $script:resultsCard.SetBounds(18,470,$cw,$rh)
+    $rh = $h - 542
+    $script:resultsCard.SetBounds(18,498,$cw,$rh)
     $script:exportButton.SetBounds(($cw - 690),12,110,34)
     $script:filter.SetBounds(($cw - 560),14,220,28)
     $script:themeSearchLabel.SetBounds(($cw - 322),18,60,24)
     $script:search.SetBounds(($cw - 260),14,240,28)
-    $script:grid.SetBounds(14,57,($cw - 28),($rh - 166))
+    $script:detail.Visible = $script:app.DetailsVisible
+    $tableHeight = if ($script:app.DetailsVisible) { $rh - 166 } else { $rh - 75 }
+    $script:grid.SetBounds(14,57,($cw - 28),$tableHeight)
     $script:detail.SetBounds(22,($rh - 96),($cw - 44),80)
     $script:footer.SetBounds(24,($h - 32),($w - 48),26)
 }

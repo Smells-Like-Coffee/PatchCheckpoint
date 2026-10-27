@@ -64,8 +64,14 @@ function ConvertTo-ValidationRow {
 }
 
 function Read-ValidationInput {
-    param([string]$Path)
+    param([string]$Path, [switch]$AllowEmpty)
     $items = @(Import-Csv -LiteralPath $Path -ErrorAction Stop)
+    if (-not $items.Count -and $AllowEmpty) {
+        $reader = [IO.StreamReader]::new([IO.Path]::GetFullPath($Path))
+        try { $header = $reader.ReadLine() } finally { $reader.Dispose() }
+        if ($header -like '*"ComputerName"*' -and $header -like '*"TrackingJson"*') { return }
+        throw 'Empty tracking report has an invalid header.'
+    }
     if (-not $items.Count -or $items[0].PSObject.Properties.Name -notcontains 'ComputerName') {
         throw 'Use a nonempty comma-delimited CSV with a ComputerName header.'
     }
@@ -87,6 +93,47 @@ function Read-ValidationInput {
         $seen[$row.ComputerName] = $true
         $row
     }
+}
+
+# Select work without changing any row. Skipped findings remain part of the full
+# campaign snapshot and keep their original reason, timestamps, and scan tracking.
+function Get-ValidationWorkIndices {
+    param([object[]]$Rows, [ValidateSet('Initial','Verification','Unfinished')][string]$Mode)
+    for ($index = 0; $index -lt $Rows.Count; $index++) {
+        if ($Mode -eq 'Initial' -or
+            ($Mode -eq 'Verification' -and $Rows[$index].Status -eq 'VERIFICATION PENDING') -or
+            ($Mode -eq 'Unfinished' -and $Rows[$index].Status -ne 'PASS')) { $index }
+    }
+}
+
+# Validate a saved campaign completely before the GUI switches away from its
+# current list. JSON is parsed as data; no saved command or code is executed.
+function Read-ValidationCampaign {
+    param([string]$Path)
+    $saved = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText([IO.Path]::GetFullPath($Path))) -ErrorAction Stop
+    foreach ($field in @('Version','InputPath','FinishedPath','UnfinishedPath','Concurrency')) {
+        if ($saved.PSObject.Properties.Name -notcontains $field) { throw "Saved campaign is missing $field." }
+    }
+    $concurrency = 0
+    if ($saved.Version -ne 1 -or -not [int]::TryParse([string]$saved.Concurrency,[ref]$concurrency) -or $concurrency -lt 1 -or $concurrency -gt 32) { throw 'Invalid session settings.' }
+    foreach ($field in @('InputPath','FinishedPath','UnfinishedPath')) {
+        if (-not [string]$saved.$field) { throw "Saved campaign has no $field." }
+        $saved.$field = [IO.Path]::GetFullPath([string]$saved.$field)
+    }
+    if ($saved.FinishedPath -eq $saved.UnfinishedPath -or $saved.FinishedPath -eq $saved.InputPath) { throw 'Saved campaign report paths conflict.' }
+    foreach ($reportPath in @($saved.FinishedPath,$saved.UnfinishedPath)) {
+        if (-not [IO.File]::Exists($reportPath) -or [IO.Path]::GetExtension($reportPath) -ne '.csv') { throw 'Saved report is missing or invalid.' }
+    }
+    $finished = @{}
+    foreach ($row in @(Read-ValidationInput $saved.FinishedPath -AllowEmpty)) {
+        if ($row.Status -ne 'PASS') { throw 'Saved finished report contains a non-PASS row.' }
+        $finished[$row.ComputerName] = $row
+    }
+    $rows = @(Read-ValidationInput $saved.UnfinishedPath -AllowEmpty)
+    foreach ($row in $rows) {
+        if ($row.Status -notin @('QUEUED','CHECKING','VERIFICATION PENDING','ACTION REQUIRED','NOT READY','UNABLE TO DETERMINE')) { throw "Invalid unfinished status for $($row.ComputerName)." }
+    }
+    [pscustomobject]@{ Settings = $saved; Rows = $rows; Finished = $finished }
 }
 
 # Keep UTC as the clock reference; change only presentation. Parse ISO values with

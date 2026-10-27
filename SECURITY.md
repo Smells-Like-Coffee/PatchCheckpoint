@@ -29,6 +29,11 @@ they are not an access-control mechanism.
 
 CSV display fields are escaped against spreadsheet formula interpretation. Treat
 external files as untrusted and retain all verification tracking columns.
+Only open saved campaign JSON files you trust: their referenced report paths are
+read using your interactive account. Resume validates the data before switching
+campaigns and never executes saved code. Row-copy commands place selected server
+identifiers and diagnostics on the system clipboard only at your request; review
+and sanitize that content before sharing it outside your organization.
 
 ## Reporting a problem
 

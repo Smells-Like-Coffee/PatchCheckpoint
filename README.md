@@ -1,9 +1,10 @@
-# Server Update Validation 1.0.7
+# Server Update Validation 1.0.8
 
 Windows desktop tool for post-monthly-reboot assessment using SCCM client data. Computers
 are assumed to have SCCM installed, to have recently rebooted, and to respond to ping.
-The first wave assesses the input list; subsequent waves assess only unfinished
-computers. There is no recovery wait or retry loop.
+The first wave assesses the input list. Follow-up actions separately check pending
+verification or reassess unfinished computers after remediation. There is no
+automatic recovery wait, repeating wave, or retry loop.
 
 The operational scope is **Software Center-visible updates waiting and pending
 reboot**, followed by verification of a qualifying SCCM client scan. It is not a
@@ -11,7 +12,7 @@ complete Windows update inventory or an application-health assessment.
 
 Download the packaged ZIP and matching checksum from this repository's **Releases**
 page, or clone the repository and keep the source files together. The current
-version is **1.0.7**. The user has reported a successful live pilot of 1.0.6; compatibility
+version is **1.0.8**. The user has reported a successful live pilot of 1.0.6; compatibility
 with other SCCM client versions and environments still requires validation.
 
 ## Start here
@@ -23,13 +24,17 @@ with other SCCM client versions and environments still requires validation.
 3. Double-click **Launch.cmd** for real assessments.
 4. Select a CSV containing a **ComputerName** header. Set both output CSV paths,
    supply credentials, choose concurrency, and click **Start wave**.
-5. Resolve reported issues on the affected servers, then click **Run next wave**.
-   The application automatically loads the unfinished report with its scan tracking.
-   No path changes are needed. PASS computers leave the queue and accumulate in
-   the finished report; they remain viewable using the status filter.
-6. After closing and reopening from the same extracted folder, the application
+5. Click **Check pending verification** to follow up only VERIFICATION PENDING
+   computers. ACTION REQUIRED, NOT READY, UNABLE TO DETERMINE, and queued computers
+   retain their existing results, timestamps, and tracking without being reassessed.
+6. Resolve reported issues on the affected servers, then click **Reassess unfinished**.
+   This assesses every remaining computer, including pending verification. Newly
+   clear computers may need another verification-only wave before they pass.
+   The application loads its unfinished report automatically; no path changes are
+   needed. PASS computers accumulate in the finished report and remain viewable.
+7. After closing and reopening from the same extracted folder, the application
    restores the campaign paths and remaining list. Enter credentials again, then
-   click **Run next wave**. Nothing runs automatically on startup.
+   choose either follow-up action. Nothing runs automatically on startup.
 
 The original input field stays visible and locks with the output paths after the
 first wave starts. **New list** unlocks setup and clears saved session settings,
@@ -67,9 +72,11 @@ SERVER02.contoso.com
 | Remote.Assessment.ps1 | Target-side readiness, update/reboot, and scan assessment. |
 | Validation.Core.ps1 | CSV contract, evidence verification, and report persistence. |
 | UI.Theme.ps1 | Native Windows Forms styling and custom controls. |
+| UI.Commands.ps1 | Menus, shortcuts, view controls, local help, and row-copy commands. |
 | Run-Tests.cmd | Core and mocked remote logic tests. |
 | Test-Interface.ps1 | Actual GUI tests using synthetic workers. |
 | BUILD-NOTES.md | Build history, test details, and validation boundaries. |
+| TROUBLESHOOTING.md | Choosing waves, interpreting pending verification, and recovery guidance. |
 
 See [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md), and
 [SECURITY.md](SECURITY.md) for project history, development, and security guidance.
@@ -110,16 +117,19 @@ Windows version and desktop theme. UI.Theme.ps1 must remain with the other scrip
 - Set credentials: separate masked password window; only the username is displayed.
 - Concurrent checks: 1-32, default 8. Settings lock while a wave is running.
 - Load list: preview the computers before starting any server action.
-- After starting, Load list becomes New list and Start wave becomes Run next wave.
-  Subsequent waves reload the unfinished report, preserving scan request evidence.
-  Finished computers are viewable but are not rechecked in this campaign.
+- After starting, Load list becomes New list and the primary action checks pending
+  verification only. Reassess unfinished is a separate button. Both actions reload
+  the unfinished report and preserve scan evidence. Skipped findings stay in the
+  table and tracking CSV with their prior assessment time. PASS is never rechecked
+  implicitly. Progress counts only the computers selected for the current wave.
 - Validation-Session.json stores campaign paths and concurrency beside the scripts
   using atomic replacement, with a .bak snapshot. It contains no credentials.
   Demo mode uses separate Demo-Session.json settings. Keep the script folder writable.
   The CSVs are the authoritative computer state; keep all tracking columns intact.
   Missing or invalid saved reports block automatic continuation and display an error.
-- When no unfinished computers remain, Run next wave reports campaign completion
-  and starts no workers. New list explicitly begins another assessment cycle.
+- When no verification is pending, its action reports the remaining attention count
+  without starting workers. Campaign completion requires no unfinished computers.
+  New list explicitly begins another assessment cycle.
 - Scrollable, sortable results grid with status filter, name search, and a selected
   row detail panel showing the report fields and diagnostic evidence.
 - **Unfinished** is the default status filter. Switch to PASS or All as needed.
@@ -136,6 +146,35 @@ Windows version and desktop theme. UI.Theme.ps1 must remain with the other scrip
   remain in unfinished output. Closing during a wave offers the same graceful stop.
 - A query has an overall 180-second timeout by default. Cancellation is requested
   asynchronously; underlying WinRM/.NET cancellation can add cleanup time.
+
+## Menus and shortcuts
+
+| Menu | Commands |
+|---|---|
+| File | New campaign (Ctrl+N), Resume campaign (Ctrl+O), Export current view (Ctrl+E), Open reports folder, Exit (Alt+F4). |
+| Actions | Run initial assessment, Check pending verification, Reassess unfinished, Stop after active checks, Set credentials. |
+| View | Status filter with active checkmark, Find computer (Ctrl+F), Clear search, Show details pane, Reset view. |
+| Help | User guide (F1), Troubleshooting, Release notes, GitHub repository, About. |
+
+Menus and visible buttons share the same underlying operations. Campaign changes
+and credentials are unavailable during an active wave. Filtering, searching,
+copying, and display export remain available. Exit uses the existing graceful-stop
+confirmation if work is active. Opening help does not start assessments or a scan.
+
+Resume campaign opens a saved session JSON and validates settings and both reports
+before replacing the current campaign. The selected campaign's paths are saved
+locally for the next launch; credentials are never included. Only open session files
+you trust, since their report paths are read using your interactive account.
+
+Open reports folder offers separate destinations when the files are stored in
+different directories. Help content opens locally in a read-only window. About
+shows the installed application, PowerShell, process architecture, and CLR versions.
+
+Right-click a computer to copy its name, six-column status summary, or detailed
+results. Copy uses the row you clicked, including sorted/filtered views. Review
+computer identifiers and diagnostics before sharing them. Reset view restores
+Unfinished, clears search and sorting, and resets column proportions. The details
+pane toggle expands the table without changing assessment or export content.
 
 ## Responsiveness and concurrency
 
