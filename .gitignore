@@ -1,0 +1,22 @@
+# Operational inventories and reports can disclose server names and patch state.
+*.csv
+!Computers.example.csv
+*.csv.bak
+*.lock
+*-Session.json
+*-Session.json.bak
+*.tmp
+
+# Generated tests, extracted distributions, and release packages stay local.
+/UI-Test-*/
+/ServerUpdateValidation-*/
+/release/
+*.zip
+*.zip.sha256
+
+# Local editor and operating-system files.
+/.vscode/
+/.idea/
+Thumbs.db
+Desktop.ini
+*.log
