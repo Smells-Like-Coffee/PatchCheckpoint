@@ -1,4 +1,28 @@
-# Patch Checkpoint 0.9.0-beta.4 - 2026-10-28
+# Patch Checkpoint 0.9.0-beta.5 - 2026-10-28
+
+## Changes from 0.9.0-beta.4
+
+- Added Diagnostics.Export.ps1: explicit data-only UI snapshot and background ZIP
+  creation. No server queries or scans are dispatched by this path. Saved CSVs and
+  .bak attachments are selected individually, not by recursive folder enumeration.
+- Captured full campaign rows, scan evidence, state counters, worker/staged summaries,
+  local runtime, source hashes and a bounded 2,000-entry application event history.
+  Credentials never enter the snapshot or background worker arguments.
+- Missing/unreadable/oversized attachments are listed in the manifest; source code,
+  raw inventory/session files, process memory and environment dumps are excluded.
+- Diagnostic failures release their worker independently of assessment/report state.
+  A staged ZIP replaces the destination only after collection completes; failed
+  exports preserve existing archives. Close waits for a diagnostic export to finish.
+- Promoted campaign outcome totals to a persistent 14-point heading above progress.
+  Attention means ACTION REQUIRED, NOT READY or UNABLE TO DETERMINE, not queued/running.
+- Existing report schemas, SCCM decisions and wave selection remain unchanged.
+
+Beta.5 validation: 112 core/export assertions and 92 mocked remote assertions passed
+under Windows PowerShell 5.1. Actual GUI tests passed for active-wave exports,
+credential canary exclusion, full campaign capture, export after a report failure,
+destination errors, existing wave/recovery flows, and the prominent outcome totals.
+All nine scripts parsed. The synthetic screenshot was inspected. This diagnostic
+collector has not been exercised against the new live issue yet.
 
 ## Changes from 0.9.0-beta.3
 

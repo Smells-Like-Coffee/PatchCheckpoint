@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.0-beta.5 - 2026-10-28
+
+- Added Help > Diagnostic Export for background, local-only support ZIPs with
+  full in-memory campaign/verification evidence, saved report CSVs/backups, runtime
+  settings, worker stages, recent application events, source hashes and a manifest.
+- Excluded credential objects, environment/memory dumps, raw session JSON, source
+  contents, original inventory contents and unrelated files. Bundles contain
+  infrastructure details and must be reviewed before sharing.
+- Added a persistent, larger campaign overview above the main progress bar showing
+  finished, verification-pending and attention totals independently of footer messages.
+- Tested active-wave exports, credential canary exclusion, report-failure recovery,
+  missing attachments, archive hashes, destination errors and safe failed replacements.
+
 ## 0.9.0-beta.4 - 2026-10-28
 
 - Renamed the application and repository to Patch Checkpoint. The entry script is

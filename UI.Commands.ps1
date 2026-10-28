@@ -60,6 +60,7 @@ function Initialize-AppMenus {
     [void](New-AppMenuItem $help '&User guide' 'Guide' 'F1')
     [void](New-AppMenuItem $help '&Troubleshooting' 'Troubleshooting')
     [void](New-AppMenuItem $help '&Release notes' 'ReleaseNotes')
+    [void](New-AppMenuItem $help '&Diagnostic Export...' 'Diagnostics')
     [void](New-AppMenuItem $help 'Open &GitHub repository' 'Repository')
     [void]$help.DropDownItems.Add([Windows.Forms.ToolStripSeparator]::new())
     [void](New-AppMenuItem $help '&About' 'About')
@@ -90,7 +91,7 @@ function Update-AppCommandState {
     if (-not $script:menuItems.Count) { return }
     $idle = -not $script:app.Running
     $canRun = $idle -and -not $script:app.FatalSave -and -not $script:app.RecoveryFailed
-    $script:menuItems['New'].Enabled = $idle -and -not $script:app.ExportJob
+    $script:menuItems['New'].Enabled = $idle -and -not $script:app.ExportJob -and -not $script:app.DiagnosticJob
     $script:menuItems['Resume'].Enabled = $script:menuItems['New'].Enabled
     $script:menuItems['Initial'].Enabled = $canRun -and -not $script:app.CampaignStarted
     $script:menuItems['Verify'].Enabled = $canRun -and $script:app.CampaignStarted
@@ -98,6 +99,8 @@ function Update-AppCommandState {
     $script:menuItems['Stop'].Enabled = $script:app.Running -and -not $script:app.Stopping
     $script:menuItems['Credentials'].Enabled = $idle -and -not $Demo
     $script:menuItems['Export'].Enabled = -not $script:app.ExportJob
+    $script:menuItems['Diagnostics'].Enabled = -not $script:app.DiagnosticJob
+    $script:menuItems['Diagnostics'].ToolTipText = 'Create a local support ZIP with campaign evidence, runtime settings, saved reports and recent errors. Contains infrastructure details; no endpoint queries.'
     $script:menuItems['FolderFinished'].Enabled = -not [string]::IsNullOrWhiteSpace($script:finishedPath.Box.Text)
     $script:menuItems['FolderUnfinished'].Enabled = -not [string]::IsNullOrWhiteSpace($script:unfinishedPath.Box.Text)
     $sameFolder = $false
@@ -113,7 +116,7 @@ function Update-AppCommandState {
     foreach ($key in @('CopyName','CopySummary','CopyDetails')) { $script:menuItems[$key].Enabled = $script:grid.SelectedRows.Count -eq 1 }
     $script:startButton.Enabled = $canRun
     $script:reassessButton.Enabled = $canRun -and $script:app.CampaignStarted
-    $script:loadButton.Enabled = $idle -and -not $script:app.ExportJob
+    $script:loadButton.Enabled = $idle -and -not $script:app.ExportJob -and -not $script:app.DiagnosticJob
 }
 
 function Show-StatusExportDialog {
@@ -187,6 +190,7 @@ function Invoke-AppCommand {
                 try { if ($dialog.ShowDialog($script:form) -eq 'OK') { Restore-AppSession -Path $dialog.FileName -Persist } } finally { $dialog.Dispose() }
             }
             'Export' { Show-StatusExportDialog }
+            'Diagnostics' { Show-DiagnosticExportDialog }
             'FolderFinished' { Open-AppReportFolder $script:finishedPath.Box.Text }
             'FolderUnfinished' { Open-AppReportFolder $script:unfinishedPath.Box.Text }
             'Exit' { $script:form.Close() }

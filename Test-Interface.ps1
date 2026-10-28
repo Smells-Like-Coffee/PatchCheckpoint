@@ -28,6 +28,13 @@ function Wait-StatusExport {
     }
     if ($script:app.ExportJob -or $script:app.ExportNotice -eq 'Export failed') { throw 'Status export failed to finish.' }
 }
+function Wait-DiagnosticExport {
+    $deadline = [datetime]::UtcNow.AddSeconds(30)
+    while ($script:app.DiagnosticJob -and [datetime]::UtcNow -lt $deadline) {
+        Invoke-AppTick; [Windows.Forms.Application]::DoEvents(); [Threading.Thread]::Sleep(25)
+    }
+    if ($script:app.DiagnosticJob -or $script:app.DiagnosticNotice -eq 'Diagnostic export failed') { throw 'Diagnostic export failed to finish.' }
+}
 function Invoke-InterfaceSmoke {
     # Keep the real timer-driven follow-up, shortening only its scan wait for
     # synthetic workers. Live assessments retain the 60-second window.
@@ -53,6 +60,7 @@ function Invoke-InterfaceSmoke {
     $script:form.Show()
     if (@($script:form.Controls | Where-Object { $_ -is [Windows.Forms.Label] -and $_.Text -eq 'Patch Checkpoint' }).Count -or $script:setupCard.Top -gt 40) { throw 'The redundant banner still occupies space.' }
     if ($script:exportButton.Text -ne 'Export Report') { throw 'Export Report label is missing.' }
+    if (-not $script:menuItems.ContainsKey('Diagnostics') -or $script:campaignOverview.Font.Size -lt 13) { throw 'Diagnostic Export menu and prominent campaign summary are required.' }
     if ($script:AppVersion -notlike '0.*beta*') { throw 'Application version must identify a pre-1.0 beta.' }
     if ($script:form.Text -notlike 'Patch Checkpoint *' -or (Get-AppHelpText 'About') -notlike '*Created with AI assistance*' -or (Get-AppHelpText 'Guide') -notlike '*# Patch Checkpoint User Guide*') { throw 'Application title, AI disclosure, or full User Guide branding is missing.' }
     if ($script:startButton.Parent -ne $script:checksCard -or $script:inputPath.Box.Parent -ne $script:setupCard -or $script:checksCard -eq $script:setupCard) { throw 'Setup and check actions must use separate panes.' }
@@ -115,6 +123,27 @@ function Invoke-InterfaceSmoke {
     $activeProgress = @($script:app.Workers | Where-Object { $_.StepPercent -ge 10 })
     if (-not $activeProgress.Count -or $script:workerSlots[$activeProgress[0].Slot].Bar.Style -ne 'Continuous') { throw 'Individual bars must reflect actual pipeline progress records.' }
     if (@($script:workerSlots.Values | Where-Object { $_.Panel.Visible }).Count -ne 2) { throw 'Individual progress slots must match configured concurrency.' }
+    # Export during active work. A credential canary must never enter the ZIP;
+    # the diagnostic worker is local only, even while remote slots are occupied.
+    $script:app.Credential = [pscredential]::new('DIAGNOSTIC-ACCOUNT-CANARY',(ConvertTo-SecureString 'DIAGNOSTIC-PASSWORD-CANARY' -AsPlainText -Force))
+    $diagnosticPath = Join-Path $script:testFolder 'Diagnostics.zip'
+    Start-DiagnosticExport $diagnosticPath
+    if ($script:menuItems['Diagnostics'].Enabled -or $script:menuItems['New'].Enabled) { throw 'A diagnostic export must prevent duplicate exports and campaign replacement.' }
+    Wait-DiagnosticExport
+    $archive = [IO.Compression.ZipFile]::OpenRead($diagnosticPath)
+    try {
+        foreach ($entry in $archive.Entries) {
+            $reader = [IO.StreamReader]::new($entry.Open())
+            try { $text = $reader.ReadToEnd() } finally { $reader.Dispose() }
+            if ($text -match 'DIAGNOSTIC-(ACCOUNT|PASSWORD)-CANARY') { throw 'Credentials leaked into a diagnostic export.' }
+            if ($entry.FullName -eq 'Snapshot.json') {
+                $diagnostic = ConvertFrom-Json -InputObject $text
+                if (@($diagnostic.Rows).Count -ne 12 -or -not $diagnostic.Wave.Running -or -not $diagnostic.Settings.CredentialsSet -or -not @($diagnostic.Workers).Count) { throw 'Live diagnostic snapshot omitted campaign rows, runtime state, or active workers.' }
+            }
+        }
+    }
+    finally { $archive.Dispose(); $script:app.Credential.Password.Dispose(); $script:app.Credential = $null }
+    Write-Output 'PASS: background diagnostic export during a wave includes full evidence without credential canaries'
     Write-Output 'PASS: individual worker bars consume observed progress records and match concurrency'
     # Render the real controls, not a generated UI mockup.
     [Windows.Forms.Application]::DoEvents()
@@ -139,6 +168,7 @@ function Invoke-InterfaceSmoke {
     $script:app.AutoVerifyDue = [datetime]::UtcNow
     Wait-DemoWave
     if ($script:app.Finished.Count -ne 4 -or $script:app.WaveMode -ne 'Verification') { throw 'Automatic follow-up did not confirm four clean computers.' }
+    if ($script:campaignOverview.Text -ne '4 finished  |  0 verification pending  |  8 require attention') { throw 'Prominent overview must retain campaign totals independently of wave progress.' }
     $resumePath = Join-Path ([IO.Path]::GetDirectoryName($script:app.UnfinishedPath)) 'Campaign.json'
     $resumed = Read-ValidationCampaign $resumePath
     if ($resumed.Finished.Count -ne 4 -or $resumed.Rows.Count -ne 8 -or ([IO.File]::ReadAllText($resumePath)) -match 'Password|Credential') { throw 'Generated campaign resume file is missing, invalid, or contains credentials.' }
@@ -379,6 +409,19 @@ function Invoke-InterfaceSmoke {
     try { Start-AppWave } catch { $blocked = $true }
     if (-not $blocked) { throw 'A failed checkpoint must not allow another wave without recovery.' }
     Write-Output 'PASS: background writer failure stops dispatch, reports the error, and blocks unsafe continuation'
+    # A diagnostic export must still work after the report writer failed. Its
+    # local worker does not use the poisoned report pool or trigger assessments.
+    $diagnosticPath = Join-Path $script:testFolder 'After-report-failure.zip'
+    $beforeDone = $script:app.Done
+    Start-DiagnosticExport $diagnosticPath; Wait-DiagnosticExport
+    if (-not [IO.File]::Exists($diagnosticPath) -or $script:app.Done -ne $beforeDone -or -not $script:app.FatalSave) { throw 'Diagnostic export after report failure changed assessment state or failed.' }
+    Start-DiagnosticExport (Join-Path $script:testFolder 'Missing-folder\Failure.zip')
+    $deadline = [datetime]::UtcNow.AddSeconds(20)
+    while ($script:app.DiagnosticJob -and [datetime]::UtcNow -lt $deadline) {
+        Invoke-AppTick; [Windows.Forms.Application]::DoEvents(); [Threading.Thread]::Sleep(25)
+    }
+    if ($script:app.DiagnosticJob -or $script:app.DiagnosticNotice -ne 'Diagnostic export failed' -or -not $script:menuItems['Diagnostics'].Enabled) { throw 'A failed diagnostic export did not release its worker or restore the menu.' }
+    Write-Output 'PASS: diagnostic export survives report failure and handles its own destination errors independently'
     $script:heartbeat.Stop(); $script:heartbeat.Dispose()
     $script:form.Hide()
     Write-Output "GUI evidence saved: $script:testFolder"
@@ -386,7 +429,7 @@ function Invoke-InterfaceSmoke {
 $source = [IO.File]::ReadAllText((Join-Path $testRoot 'Start-PatchCheckpoint.ps1'))
 # Load trusted local helper text in-memory for this test harness only. No execution
 # policy settings are changed, and the production launcher uses ordinary -File.
-foreach ($helperName in @('Validation.Core.ps1','UI.Theme.ps1','UI.Commands.ps1')) {
+foreach ($helperName in @('Validation.Core.ps1','UI.Theme.ps1','UI.Commands.ps1','Diagnostics.Export.ps1')) {
     $source = $source.Replace(". (Join-Path `$PSScriptRoot '$helperName')", ". ([scriptblock]::Create([IO.File]::ReadAllText((Join-Path `$PSScriptRoot '$helperName'))))")
 }
 $source = $source.Replace('$PSScriptRoot',("'" + $testRoot.Replace("'","''") + "'"))

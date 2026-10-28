@@ -1,5 +1,19 @@
 # Patch Checkpoint troubleshooting
 
+## Collect a diagnostic ZIP before changing the campaign
+
+Use **Help > Diagnostic Export** while the unexpected result is still displayed.
+Choose a ZIP destination and wait for the completion message. The export includes
+every campaign row, verification evidence, the selected computer, worker stages,
+recent application events, and saved report CSVs/backups. It starts no new endpoint
+queries or scans and remains available after a report-save failure.
+
+Capture before resetting or editing tracking state. The in-memory snapshot and saved
+files may differ during a wave; Manifest.json identifies attachment collection times
+and failures. The ZIP excludes credentials and memory dumps but includes computer
+names, file paths, patch details and diagnostic messages. Review before sharing via
+a trusted channel. See the User Guide for exact contents and collection limits.
+
 ## OS/.NET scope and ignored PFRO
 
 Only Software Center-visible Windows OS/.NET patches are in scope. Known other

@@ -7,9 +7,9 @@ monthly patch cycle, which need attention, and which are still waiting for scan
 verification. Keep the results together, resolve issues on the affected machines,
 and return for the next check.
 
-**Beta: 0.9.0-beta.4** · Windows PowerShell 5.1 · SCCM / Configuration Manager
+**Beta: 0.9.0-beta.5** · Windows PowerShell 5.1 · SCCM / Configuration Manager
 
-[Download the current beta](https://github.com/Smells-Like-Coffee/PatchCheckpoint/releases/tag/v0.9.0-beta.4) · [User guide](USER-GUIDE.md) · [Troubleshooting](TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md)
+[Download the current beta](https://github.com/Smells-Like-Coffee/PatchCheckpoint/releases/tag/v0.9.0-beta.5) · [User guide](USER-GUIDE.md) · [Troubleshooting](TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md)
 
 ![Patch Checkpoint showing campaign setup, progress, and computer status](docs/images/patch-checkpoint.png)
 
@@ -22,6 +22,7 @@ and return for the next check.
 - **Your campaign, your folder:** choose where the working CSVs and resume file are stored. Continue later without changing paths between waves.
 - **Useful reports:** export all campaign results to an Excel workbook with a tab per status, or export the current table view to CSV. Excel is not required.
 - **Visible progress:** adjustable concurrency, individual check progress, searchable results, and a collapsible setup pane.
+- **Support when you need it:** Help > Diagnostic Export creates a local support ZIP with campaign evidence and recent errors, without starting more endpoint checks.
 
 ## Get started
 

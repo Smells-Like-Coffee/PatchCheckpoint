@@ -13,6 +13,7 @@ $ErrorActionPreference = 'Stop'
 $testRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $helpers = [IO.File]::ReadAllText((Join-Path $testRoot 'Validation.Core.ps1'))
 . ([scriptblock]::Create($helpers))
+. ([scriptblock]::Create([IO.File]::ReadAllText((Join-Path $testRoot 'Diagnostics.Export.ps1'))))
 $script:assertions = 0
 function Assert-Equal {
     param($Actual,$Expected,[string]$Message)
@@ -220,6 +221,40 @@ try {
         Assert-Equal $rejected $true 'Report lock prevents simultaneous writers'
     }
     finally { $lock.Dispose() }
+    # Diagnostic archives remain useful with missing storage and never sweep the
+    # containing folder for unrelated files. Source files contribute hashes only.
+    $bundlePath = Join-Path $folder 'diagnostics.zip'
+    [IO.File]::WriteAllText((Join-Path $folder 'UnrelatedSecret.txt'),'NOT-FOR-THE-DIAGNOSTIC-ZIP')
+    $snapshot = [ordered]@{ AppVersion = 'test'; Rows = @($rows); Settings = @{ Concurrency = 8 } }
+    $attachments = @([pscustomobject]@{ Name = 'Finished.csv'; Path = $finishedPath },[pscustomobject]@{ Name = 'Unfinished.csv.bak'; Path = (Join-Path $folder 'missing.csv') })
+    Save-DiagnosticBundle $bundlePath (ConvertTo-Json -InputObject $snapshot -Depth 8) $attachments $testRoot
+    $archive = [IO.Compression.ZipFile]::OpenRead($bundlePath)
+    try {
+        Assert-Equal ($null -ne $archive.GetEntry('Snapshot.json')) $true 'Diagnostic bundle includes full state JSON'
+        Assert-Equal ($null -ne $archive.GetEntry('CurrentState.csv')) $true 'Diagnostic bundle includes readable tracking CSV'
+        Assert-Equal ($null -ne $archive.GetEntry('SavedReports/Finished.csv')) $true 'Diagnostic bundle includes explicitly selected saved report'
+        Assert-Equal ($null -eq $archive.GetEntry('UnrelatedSecret.txt')) $true 'Diagnostic bundle excludes unrelated files'
+        Assert-Equal @($archive.Entries | Where-Object { $_.FullName -like '*.ps1' -or $_.FullName -like '*Session.json' }).Count 0 'Diagnostic bundle contains neither raw sources nor raw session settings'
+        $reader = [IO.StreamReader]::new($archive.GetEntry('Manifest.json').Open())
+        try { $manifest = ConvertFrom-Json -InputObject $reader.ReadToEnd() } finally { $reader.Dispose() }
+        Assert-Equal @($manifest | Where-Object Outcome -eq 'Not collected').Count 1 'Missing diagnostic attachment is recorded without aborting the ZIP'
+        foreach ($item in $manifest | Where-Object Outcome -eq 'Included') {
+            $stream = $archive.GetEntry($item.Entry).Open(); $sha = [Security.Cryptography.SHA256]::Create()
+            try { $hash = [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','') } finally { $sha.Dispose(); $stream.Dispose() }
+            Assert-Equal $hash $item.SHA256 'Diagnostic manifest digest matches archive content'
+        }
+    }
+    finally { $archive.Dispose() }
+    $before = (Get-FileHash -LiteralPath $bundlePath -Algorithm SHA256).Hash
+    $rejected = $false
+    try { Save-DiagnosticBundle $bundlePath 'invalid JSON' @() $testRoot } catch { $rejected = $true }
+    Assert-Equal $rejected $true 'Malformed diagnostic state fails explicitly'
+    Assert-Equal (Get-FileHash -LiteralPath $bundlePath -Algorithm SHA256).Hash $before 'Failed diagnostic export preserves the previous archive'
+    $badRow = New-ValidationRow 'BROKEN-TIMESTAMP'; $badRow.CheckedAtUtc = 'invalid timestamp'
+    $rejected = $false
+    try { Save-DiagnosticBundle $bundlePath (ConvertTo-Json -InputObject @{ Rows = @($badRow) } -Depth 8) @() $testRoot } catch { $rejected = $true }
+    Assert-Equal $rejected $true 'Diagnostic conversion failure aborts a partially staged ZIP'
+    Assert-Equal (Get-FileHash -LiteralPath $bundlePath -Algorithm SHA256).Hash $before 'Partial archive failure still preserves the previous export'
 }
 finally {
     # Only known test files are removed; never recurse into a computed directory.

@@ -14,7 +14,7 @@ complete Windows update inventory or an application-health assessment.
 
 Download the packaged ZIP and matching checksum from this repository's **Releases**
 page, or clone the repository and keep the source files together. The current
-version is **0.9.0-beta.4**. This is beta software; earlier 1.0.x tags were test-build
+version is **0.9.0-beta.5**. This is beta software; earlier 1.0.x tags were test-build
 labels, not a general-availability declaration. Future builds remain below 1.0 until
 the owner explicitly authorizes that transition. The owner has reported successful
 live testing of earlier builds; compatibility
@@ -116,6 +116,7 @@ SERVER02.contoso.com
 | Validation.Core.ps1 | CSV contract, evidence verification, and report persistence. |
 | UI.Theme.ps1 | Native Windows Forms styling and custom controls. |
 | UI.Commands.ps1 | Menus, shortcuts, view controls, local help, and row-copy commands. |
+| Diagnostics.Export.ps1 | Local diagnostic snapshots and background support ZIP creation. |
 | Run-Tests.cmd | Core and mocked remote logic tests. |
 | Test-Interface.ps1 | Actual GUI tests using synthetic workers. |
 | BUILD-NOTES.md | Build history, test details, and validation boundaries. |
@@ -215,7 +216,7 @@ Windows version and desktop theme. UI.Theme.ps1 must remain with the other scrip
 | File | New campaign (Ctrl+N), Resume campaign (Ctrl+O), Export Report (Ctrl+E), Open reports folder, Exit (Alt+F4). |
 | Actions | Run initial assessment, Check pending verification, Reassess unfinished, Stop after active checks, Set credentials. |
 | View | Status filter with active checkmark, Find computer (Ctrl+F), Clear search, Show details pane, Reset view. |
-| Help | User guide (F1), Troubleshooting, Release notes, GitHub repository, About. |
+| Help | User guide (F1), Troubleshooting, Release notes, Diagnostic Export, GitHub repository, About. |
 
 Menus and visible buttons share the same underlying operations. Campaign changes
 and credentials are unavailable during an active wave. Filtering, searching,
@@ -237,7 +238,52 @@ computer identifiers and diagnostics before sharing them. Reset view restores
 Unfinished, clears search and sorting, and resets column proportions. The details
 pane toggle expands the table without changing assessment or export content.
 
-## Responsiveness and concurrency
+## Campaign overview
+
+The large campaign overview above the main progress bar shows **finished**,
+**verification pending**, and **require attention** totals across the whole campaign.
+Require attention counts ACTION REQUIRED, NOT READY, and UNABLE TO DETERMINE;
+active and queued computers appear separately in the wave-progress line. These
+totals remain visible when footer messages change, regardless of the table filter.
+
+## Diagnostic export
+
+Choose **Help > Diagnostic Export** and select a ZIP location (the campaign folder
+is offered by default). It works during an assessment, after a wave, before starting
+one, or after a report-save error. Export runs in the background and starts no new
+endpoint queries or scans. Wait for the completion message before closing the app.
+
+The ZIP contains:
+
+- **Snapshot.json:** application version, local runtime details, explicit settings,
+  campaign totals, full in-memory rows including scan baselines/history and
+  VerificationContextJson, selected computer/filter, worker stages, staged work,
+  checkpoint state, and the last 2,000 application events in this process.
+- **CurrentState.csv:** the same full campaign in the normal tracking schema,
+  including PASS rows and rows hidden by the current display filter.
+- **SavedReports/**: the saved finished/unfinished CSVs and available .bak files.
+- **SourceHashes.json:** hashes of known application source files, for version comparison.
+- **Manifest.json:** collection times, entry sizes and hashes, plus failed/missing attachments.
+- **READ-ME.txt:** bundle contents, timing and privacy limitations.
+
+The ZIP does not collect credential objects, password fields, environment dumps,
+transcripts, memory dumps, source-code contents, raw session JSON, the original
+input CSV contents, or unrelated folder files. Settings are reconstructed from
+an explicit list. The credential-related setting is only a true/false indicator
+that credentials have been set.
+
+The archive **is not anonymized or encrypted**: computer names, paths, patch details,
+diagnostic messages and saved report contents are included. Review it before sharing
+and use a trusted channel. Saved report attachments are capped at 50 MB each; absent,
+unreadable or oversized files are recorded in the manifest without losing the
+in-memory snapshot. The event history begins when this version starts and is not
+reconstructed from earlier sessions.
+
+The in-memory snapshot is frozen when export starts; disk files are read afterward.
+They may differ during active work or after a failed checkpoint. Each saved report
+is read independently; the bundle is not a synchronized transaction across all files.
+
+## Background work
 
 Remote queries run in bounded worker runspaces. In 1.0.7, tracking report writes
 also run in a dedicated background runspace, with only one report writer active.

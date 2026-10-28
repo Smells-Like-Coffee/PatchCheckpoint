@@ -180,7 +180,15 @@ function Set-ValidationTheme {
     $script:toolTips = [Windows.Forms.ToolTip]::new()
     $script:toolTips.AutoPopDelay = 20000; $script:toolTips.InitialDelay = 400; $script:toolTips.ReshowDelay = 100
     $script:toolTips.ShowAlways = $true
-    [void](New-ThemeHeading $script:progressCard 'Progress and summary')
+    # Keep campaign outcomes prominent even after the footer changes to show a
+    # save/export message. The smaller line below remains the current-wave count.
+    $script:campaignOverview = [Windows.Forms.Label]::new()
+    $script:campaignOverview.Font = [Drawing.Font]::new('Segoe UI',14,[Drawing.FontStyle]::Bold)
+    $script:campaignOverview.BackColor = [Drawing.Color]::Transparent
+    $script:campaignOverview.AutoEllipsis = $true
+    $script:campaignOverview.Text = '0 finished  |  0 verification pending  |  0 require attention'
+    $script:progressCard.Controls.Add($script:campaignOverview)
+    $script:toolTips.SetToolTip($script:campaignOverview,'Campaign totals across all waves. Require attention includes ACTION REQUIRED, NOT READY, and UNABLE TO DETERMINE. Active and queued checks appear below.')
     $computerLabel.Parent = $script:resultsCard; $computerLabel.SetBounds(20,14,250,28)
     $computerLabel.Font = [Drawing.Font]::new('Segoe UI',13,[Drawing.FontStyle]::Bold)
     $computerLabel.BackColor = [Drawing.Color]::Transparent
@@ -315,6 +323,7 @@ function Set-ValidationThemeLayout {
     $progressHeight = if ($script:app.ShowWorkerProgress) { 206 } else { 122 }
     $progressY = $checksY + 100
     $script:progressCard.SetBounds(18,$progressY,$cw,$progressHeight)
+    $script:campaignOverview.SetBounds(20,12,($cw - 40),32)
     $progressWidth = [int]($cw * 0.39)
     $script:progress.SetBounds(20,50,$progressWidth,20)
     $script:percentLabel.SetBounds(($progressWidth + 30),47,55,28)
@@ -347,6 +356,9 @@ function Update-ValidationThemeSummary {
         $count = [int]$script:app.StatusCounts[$status]
         $script:statusCountLabels[$status].Text = "$count  $status"
     }
+    $attention = [int]$script:app.StatusCounts['ACTION REQUIRED'] + [int]$script:app.StatusCounts['NOT READY'] + [int]$script:app.StatusCounts['UNABLE TO DETERMINE']
+    $script:campaignOverview.Text = '{0} finished  |  {1} verification pending  |  {2} require attention' -f $script:app.Finished.Count,[int]$script:app.StatusCounts['VERIFICATION PENDING'],$attention
+    $script:toolTips.SetToolTip($script:campaignOverview,$script:campaignOverview.Text + '. Active and queued checks are shown separately below.')
     $total = $script:app.WorkIndices.Count
     $percent = if ($total) { [int][math]::Floor(100 * $script:app.Done / $total) } else { 0 }
     $script:percentLabel.Text = "$percent%"

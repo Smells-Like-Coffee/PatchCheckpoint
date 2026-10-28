@@ -24,7 +24,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '0.9.0-beta.4'
+$script:AppVersion = '0.9.0-beta.5'
 $script:ProjectRoot = $PSScriptRoot
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or -not [Environment]::Is64BitProcess -or
     [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
@@ -35,6 +35,7 @@ Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 . (Join-Path $PSScriptRoot 'Validation.Core.ps1')
 . (Join-Path $PSScriptRoot 'UI.Theme.ps1')
 . (Join-Path $PSScriptRoot 'UI.Commands.ps1')
+. (Join-Path $PSScriptRoot 'Diagnostics.Export.ps1')
 $script:app = @{
     Rows = @(); Finished = @{}; Workers = (New-Object System.Collections.ArrayList)
     Credential = $null; Pool = $null; Running = $false; Stopping = $false
@@ -55,6 +56,9 @@ $script:app = @{
     ViewPreferencesDirty = $false
     AutoVerifyDue = $null; InitialVerificationDelaySeconds = 60
     RestoringFolder = $false
+    DiagnosticJob = $null; DiagnosticNotice = ''
+    DiagnosticEvents = (New-Object System.Collections.ArrayList)
+    DiagnosticsSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Diagnostics.Export.ps1'))
 }
 
 # Workers have no GUI references. All remote invocation and waiting occurs away
@@ -101,6 +105,7 @@ $script:workerSource = {
 
 function Show-AppError {
     param([string]$Message)
+    Add-AppDiagnosticEvent 'Application error' $Message
     [void][Windows.Forms.MessageBox]::Show($script:form,$Message,'Patch Checkpoint','OK','Error')
 }
 function New-Label {
@@ -281,6 +286,7 @@ function Update-AppProgress {
     $saveState = if ($script:app.ReportJob -or $script:app.ReportsDirty) { 'Saving CSV checkpoint' } else { 'CSV checkpoint saved' }
     $script:footer.Text = 'Elapsed {0} | {1} | {2}' -f $script:app.Clock.Elapsed.ToString('hh\:mm\:ss'), $(if ($Demo) { 'DEMO: no network actions' } else { 'Read-only except verification scan' }),$saveState
     if ($script:app.ExportNotice) { $script:footer.Text += ' | ' + $script:app.ExportNotice }
+    if ($script:app.DiagnosticNotice) { $script:footer.Text += ' | ' + $script:app.DiagnosticNotice }
     Update-ValidationThemeSummary
     Update-WorkerProgressDisplay
 }
@@ -468,6 +474,7 @@ function Start-AppWave {
         if (-not $script:app.ExportJob) { $script:app.ExportNotice = '' }
         $script:app.Next = 0; $script:app.Done = 0; $script:app.Stopping = $false; $script:app.FatalSave = $false
         $script:app.Running = $true; $script:app.Clock.Restart(); Set-SetupEnabled $false
+        Add-AppDiagnosticEvent 'Wave started' ("Mode=$Mode; selected=$($script:app.WorkIndices.Count); concurrency=$([int]$script:concurrency.Value)")
         $script:timer.Start()
     }
     catch { Release-AppResources; throw }
@@ -480,8 +487,9 @@ function Invoke-AppTick {
     $script:app.BusyTick = $true
     try {
         Complete-StatusExport
+        Complete-DiagnosticExport
         if (-not $script:app.Running) {
-            if (-not $script:app.ExportJob) { $script:timer.Stop() }
+            if (-not $script:app.ExportJob -and -not $script:app.DiagnosticJob) { $script:timer.Stop() }
             return
         }
         # Allow SCCM time to finish its asynchronous scan without blocking the
@@ -528,6 +536,7 @@ function Invoke-AppTick {
                 $work.PowerShell.Dispose(); $work.Clock.Stop(); $script:app.Workers.Remove($work)
             }
             $script:app.Rows[$work.Index] = $row; $script:app.Done++
+            Add-AppDiagnosticEvent 'Computer assessed' ("$($row.ComputerName): $($row.Status); verification=$($row.Verification); $($row.Reason)")
             $script:app.LastWorkerResults[$work.Slot] = [pscustomobject]@{ Name = $row.ComputerName; Status = $row.Status }
             if ($row.Status -eq 'PASS') { $script:app.Finished[$row.ComputerName] = $row }
             else { $script:app.Finished.Remove($row.ComputerName) }
@@ -585,12 +594,14 @@ function Invoke-AppTick {
         if (($script:app.Next -eq $script:app.WorkIndices.Count -or $script:app.Stopping) -and -not $script:app.Workers.Count -and -not $script:app.PendingDispatch.Count -and -not $script:app.ReportJob -and (-not $script:app.ReportsDirty -or $script:app.FatalSave)) {
             if ($script:app.WaveMode -eq 'Initial' -and -not $script:app.Stopping -and -not $script:app.FatalSave -and @($script:app.Rows | Where-Object Status -eq 'VERIFICATION PENDING').Count) {
                 $script:app.AutoVerifyDue = [datetime]::UtcNow.AddSeconds($script:app.InitialVerificationDelaySeconds)
+                Add-AppDiagnosticEvent 'Automatic follow-up scheduled' ('DueUtc=' + $script:app.AutoVerifyDue.ToString('o'))
                 $script:footer.Text = 'Initial assessment saved. Waiting for SCCM scan completion before the automatic verification follow-up.'
                 return
             }
             Update-AppProgress
-            if (-not $script:app.ExportJob) { $script:timer.Stop() }
+            if (-not $script:app.ExportJob -and -not $script:app.DiagnosticJob) { $script:timer.Stop() }
             $script:app.Clock.Stop(); $script:app.Running = $false
+            Add-AppDiagnosticEvent 'Wave ended' ("Mode=$($script:app.WaveMode); assessed=$($script:app.Done); stopped=$($script:app.Stopping); reportError=$($script:app.FatalSave)")
             Release-AppResources; Set-SetupEnabled $true
             $remaining = @($script:app.Rows | Where-Object Status -ne 'PASS').Count
             $pendingCount = @($script:app.Rows | Where-Object Status -eq 'VERIFICATION PENDING').Count
@@ -737,6 +748,11 @@ $script:filter.Add_SelectedIndexChanged({ Update-AppCommandState })
 $script:timer = [Windows.Forms.Timer]::new(); $script:timer.Interval = 150; $script:timer.Add_Tick({ Invoke-AppTick })
 $script:form.Add_FormClosing({
     param($sender,$eventArgs)
+    if ($script:app.DiagnosticJob) {
+        $eventArgs.Cancel = $true
+        $script:footer.Text = 'Diagnostic export is still running. Wait for the ZIP to finish, then close.'
+        return
+    }
     if ($script:app.Running -and -not $script:app.AllowClose) {
         $eventArgs.Cancel = $true
         if ([Windows.Forms.MessageBox]::Show($script:form,'Stop after active checks, save reports, then close?','Active wave','YesNo','Question') -eq 'Yes') {
@@ -787,6 +803,7 @@ function Restore-AppSession {
 try { Restore-AppSession }
 catch {
     $script:app.RecoveryFailed = $true
+    Add-AppDiagnosticEvent 'Campaign restore failed' $_.Exception.Message
     $script:footer.Text = 'Saved campaign could not be restored: ' + $_.Exception.Message
     $script:loadButton.Text = 'New list'; Update-AppCommandState
 }
@@ -795,6 +812,7 @@ finally {
     $script:timer.Stop(); $script:timer.Dispose()
     foreach ($work in $script:app.Workers.ToArray()) { $work.PowerShell.Stop(); $work.PowerShell.Dispose() }
     if ($script:app.ExportJob) { $script:app.ExportJob.PowerShell.Stop(); $script:app.ExportJob.PowerShell.Dispose() }
+    if ($script:app.DiagnosticJob) { $script:app.DiagnosticJob.PowerShell.Stop(); $script:app.DiagnosticJob.PowerShell.Dispose() }
     Release-AppResources
     if ($script:app.Credential) { $script:app.Credential.Password.Dispose() }
     $script:binding.Dispose(); $script:table.Dispose(); $script:form.Dispose()

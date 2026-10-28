@@ -38,6 +38,14 @@ and sanitize that content before sharing it outside your organization.
 
 ## Reporting a problem
 
+Help > Diagnostic Export creates a local, unencrypted support ZIP containing full
+campaign rows, scan evidence, saved report CSVs/backups, local runtime/settings and
+recent application messages. It is not anonymized. Review its contents and use a
+trusted sharing channel; never attach an operational bundle to a public issue.
+The collector uses an explicit field/file list and does not collect credential
+objects, environment dumps, memory dumps, raw session JSON or arbitrary folder files.
+It performs no endpoint queries. Existing diagnostic/report text is included as data.
+
 Report security concerns privately to the repository owner. Do not post credentials,
 real inventories, or sensitive diagnostic output in issues. Provide a sanitized
 reproduction, affected version, expected behavior, and actual result. Contact the
