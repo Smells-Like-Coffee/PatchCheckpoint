@@ -58,6 +58,13 @@ function Invoke-InterfaceSmoke {
     Write-Output 'PASS: chosen campaign folder relocates the whole campaign and rejects existing campaign files'
     $script:concurrency.Value = 2
     $script:form.Show()
+    if ($script:footer.Parent -ne $script:activityBody -or $script:activityCard.Parent -ne $script:progressCard) { throw 'Activity messages must live inside the progress section.' }
+    $message = $script:footer.Text
+    $script:footer.Text = 'Initial assessment saved. Verification follow-up starts in 42 seconds. Stop cancels the follow-up.'
+    if ($script:activityHeading.Text -ne 'Next check in 42s' -or $script:footer.Text -notlike '*42 seconds*') { throw 'Countdown heading must follow the existing message without replacing it.' }
+    $script:footer.Text = 'ERROR: test activity warning'
+    if ($script:activityHeading.Text -ne 'Attention required' -or $script:activityAccent.BackColor -ne [Drawing.Color]::Firebrick) { throw 'Activity errors need a distinct warning style.' }
+    $script:footer.Text = $message
     if (@($script:form.Controls | Where-Object { $_ -is [Windows.Forms.Label] -and $_.Text -eq 'Patch Checkpoint' }).Count -or $script:setupCard.Top -gt 40) { throw 'The redundant banner still occupies space.' }
     if ($script:exportButton.Text -ne 'Export Report') { throw 'Export Report label is missing.' }
     if (-not $script:menuItems.ContainsKey('Diagnostics') -or $script:campaignOverview.Font.Size -lt 13) { throw 'Diagnostic Export menu and prominent campaign summary are required.' }
@@ -109,6 +116,11 @@ function Invoke-InterfaceSmoke {
     $script:form.Size = $script:form.MinimumSize
     [Windows.Forms.Application]::DoEvents()
     if ($script:grid.Height -lt 90 -or $script:stopButton.Right -gt $script:setupCard.ClientSize.Width -or $script:detail.Bottom -gt $script:resultsCard.ClientSize.Height) { throw 'Minimum-size layout clips a required control.' }
+    if ($script:workerFlow.Right -ge $script:activityCard.Left -or $script:activityCard.Right -gt $script:progressCard.Width -or $script:activityBody.Bottom -gt $script:activityCard.Height) { throw 'Activity card overlaps worker bars or escapes its container at minimum size.' }
+    $message = $script:footer.Text
+    $script:footer.Text = ('Long diagnostic path and progress message. ' * 30)
+    if ($script:footer.Height -le $script:activityBody.Height -or -not $script:activityBody.AutoScroll) { throw 'Long activity messages must remain available through scrolling.' }
+    $script:footer.Text = $message
     $script:form.Size = $savedSize
     [Windows.Forms.Application]::DoEvents()
     Write-Output 'PASS: themed controls, card grouping, and minimum-window layout'

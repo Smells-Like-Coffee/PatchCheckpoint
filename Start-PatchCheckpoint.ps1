@@ -24,7 +24,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '0.9.0-beta.5'
+$script:AppVersion = '0.9.0-beta.6'
 $script:ProjectRoot = $PSScriptRoot
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or -not [Environment]::Is64BitProcess -or
     [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {

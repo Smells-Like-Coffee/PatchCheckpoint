@@ -7,9 +7,9 @@ monthly patch cycle, which need attention, and which are still waiting for scan
 verification. Keep the results together, resolve issues on the affected machines,
 and return for the next check.
 
-**Beta: 0.9.0-beta.5** · Windows PowerShell 5.1 · SCCM / Configuration Manager
+**Beta: 0.9.0-beta.6** · Windows PowerShell 5.1 · SCCM / Configuration Manager
 
-[Download the current beta](https://github.com/Smells-Like-Coffee/PatchCheckpoint/releases/tag/v0.9.0-beta.5) · [User guide](USER-GUIDE.md) · [Troubleshooting](TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md)
+[Download the current beta](https://github.com/Smells-Like-Coffee/PatchCheckpoint/releases/tag/v0.9.0-beta.6) · [User guide](USER-GUIDE.md) · [Troubleshooting](TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md)
 
 ![Patch Checkpoint showing campaign setup, progress, and computer status](docs/images/patch-checkpoint.png)
 

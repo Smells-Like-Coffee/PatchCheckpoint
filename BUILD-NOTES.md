@@ -1,4 +1,17 @@
-# Patch Checkpoint 0.9.0-beta.5 - 2026-10-28
+# Patch Checkpoint 0.9.0-beta.6 - 2026-10-28
+
+## Changes from 0.9.0-beta.5
+
+- Reparented the existing message label into a right-side activity card so every
+  existing status assignment, including diagnostic/export errors and countdowns,
+  uses the same presentation. No assessment or scheduling logic changed.
+- Added a dynamic countdown heading, red error accents, wrapped text and a scroll
+  container to preserve long messages. Kept the original text for diagnostic capture.
+- Reserved space on the right, retained two-column scrolling worker slots on the
+  left, allowed status badges to wrap, and reclaimed the bottom footer margin.
+- GUI regression checks cover countdown/error styling, long text, minimum-window
+  containment, worker separation, existing view toggles and the complete workflow.
+
 
 ## Changes from 0.9.0-beta.4
 

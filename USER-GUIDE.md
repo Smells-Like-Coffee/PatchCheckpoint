@@ -14,7 +14,7 @@ complete Windows update inventory or an application-health assessment.
 
 Download the packaged ZIP and matching checksum from this repository's **Releases**
 page, or clone the repository and keep the source files together. The current
-version is **0.9.0-beta.5**. This is beta software; earlier 1.0.x tags were test-build
+version is **0.9.0-beta.6**. This is beta software; earlier 1.0.x tags were test-build
 labels, not a general-availability declaration. Future builds remain below 1.0 until
 the owner explicitly authorizes that transition. The owner has reported successful
 live testing of earlier builds; compatibility
@@ -244,7 +244,7 @@ The large campaign overview above the main progress bar shows **finished**,
 **verification pending**, and **require attention** totals across the whole campaign.
 Require attention counts ACTION REQUIRED, NOT READY, and UNABLE TO DETERMINE;
 active and queued computers appear separately in the wave-progress line. These
-totals remain visible when footer messages change, regardless of the table filter.
+totals remain visible when activity messages change, regardless of the table filter.
 
 ## Diagnostic export
 
@@ -522,3 +522,7 @@ powershell.exe -NoProfile -STA -File .\Test-Interface.ps1
 ## Project name and AI assistance
 
 Patch Checkpoint was created with OpenAI Codex assistance for implementation, documentation, and tests. The project owner directs requirements, review, and operational testing. The local Validation-Session.json filename is retained for compatibility with earlier builds; existing campaign data is not renamed or moved.
+
+## Current activity card
+
+Progress messages, report/export notices, errors and the next-check countdown appear in the Current activity card on the right of the progress section. The heading becomes Next check in ... during the automatic verification wait; errors use a red accent. Long messages wrap and can be scrolled. Worker bars remain on the left, and hiding them does not hide the activity card. No countdown timing or assessment behavior changes.

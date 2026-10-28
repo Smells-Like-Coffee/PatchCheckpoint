@@ -282,6 +282,26 @@ function Set-ValidationTheme {
     })
     $script:footer.ForeColor = [Drawing.Color]::FromArgb(67,87,115)
     $script:footer.BackColor = [Drawing.Color]::Transparent
+    # Reuse the existing message label so every progress, countdown, error and
+    # export message moves together without changing assessment behavior.
+    $script:activityCard = [ValidationUI.Card]::new()
+    $script:progressCard.Controls.Add($script:activityCard)
+    $script:activityAccent = [Windows.Forms.Panel]::new()
+    $script:activityAccent.BackColor = [Drawing.Color]::FromArgb(0,115,220)
+    $script:activityCard.Controls.Add($script:activityAccent)
+    $script:activityHeading = [Windows.Forms.Label]::new()
+    $script:activityHeading.Font = [Drawing.Font]::new('Segoe UI',11,[Drawing.FontStyle]::Bold)
+    $script:activityHeading.BackColor = [Drawing.Color]::Transparent
+    $script:activityCard.Controls.Add($script:activityHeading)
+    $script:activityBody = [Windows.Forms.Panel]::new()
+    $script:activityBody.AutoScroll = $true
+    $script:activityBody.BackColor = [Drawing.Color]::FromArgb(250,252,255)
+    $script:activityCard.Controls.Add($script:activityBody)
+    $script:footer.Parent = $script:activityBody
+    $script:footer.Anchor = 'Top,Left'; $script:footer.AutoSize = $true
+    $script:footer.Font = [Drawing.Font]::new('Segoe UI',10)
+    $script:footer.Add_TextChanged({ Update-ActivityDisplay })
+    Update-ActivityDisplay
     # Store semantic labels for the resize handler; it does not capture temporary
     # local variables through a PowerShell closure.
     $script:themeConcurrentLabel = $concurrentLabel; $script:themeSearchLabel = $searchLabel
@@ -320,24 +340,32 @@ function Set-ValidationThemeLayout {
     $script:reassessButton.SetBounds(404,42,224,34)
     $script:stopButton.SetBounds(640,42,205,34)
     $script:scopeCaption.SetBounds(865,48,($cw - 885),25)
-    $progressHeight = if ($script:app.ShowWorkerProgress) { 206 } else { 122 }
+    $progressHeight = if ($script:app.ShowWorkerProgress) { 230 } else { 142 }
     $progressY = $checksY + 100
     $script:progressCard.SetBounds(18,$progressY,$cw,$progressHeight)
-    $script:campaignOverview.SetBounds(20,12,($cw - 40),32)
-    $progressWidth = [int]($cw * 0.39)
+    $activityWidth = [math]::Max(280,[math]::Min(330,[int]($cw * 0.25)))
+    $leftWidth = $cw - $activityWidth - 52
+    $script:activityCard.SetBounds(($cw - $activityWidth - 16),12,$activityWidth,($progressHeight - 24))
+    $script:activityAccent.SetBounds(10,14,4,($progressHeight - 52))
+    $script:activityHeading.SetBounds(24,14,($activityWidth - 38),26)
+    $script:activityBody.SetBounds(24,46,($activityWidth - 38),($progressHeight - 86))
+    $script:footer.MaximumSize = [Drawing.Size]::new(($activityWidth - 62),0)
+    $script:footer.Location = [Drawing.Point]::new(0,0)
+    $script:campaignOverview.SetBounds(20,12,$leftWidth,32)
+    $progressWidth = [int]($leftWidth * 0.42)
     $script:progress.SetBounds(20,50,$progressWidth,20)
     $script:percentLabel.SetBounds(($progressWidth + 30),47,55,28)
-    $script:summary.SetBounds(($progressWidth + 100),46,($cw - $progressWidth - 120),30)
-    $script:badgeFlow.SetBounds(20,84,($cw - 40),30)
+    $script:summary.SetBounds(($progressWidth + 90),46,($leftWidth - $progressWidth - 70),38)
+    $script:badgeFlow.SetBounds(20,86,$leftWidth,46)
     $script:workerFlow.Visible = $script:app.ShowWorkerProgress
-    $script:workerFlow.SetBounds(20,118,($cw - 40),80)
+    $script:workerFlow.SetBounds(20,138,$leftWidth,80)
     foreach ($slot in $script:workerSlots.Values) {
         # Leave room for the vertical scrollbar as well as two panel margins.
-        $slot.Panel.Width = [int](($cw - 104) / 2)
+        $slot.Panel.Width = [int](($leftWidth - 64) / 2)
         $slot.Label.Width = $slot.Panel.Width; $slot.Bar.Width = $slot.Panel.Width
     }
     $resultsY = $progressY + $progressHeight + 12
-    $rh = $h - $resultsY - 46
+    $rh = $h - $resultsY - 18
     $script:resultsCard.SetBounds(18,$resultsY,$cw,$rh)
     $script:exportButton.SetBounds(($cw - 710),12,130,34)
     $script:filter.SetBounds(($cw - 560),14,220,28)
@@ -347,7 +375,22 @@ function Set-ValidationThemeLayout {
     $tableHeight = if ($script:app.DetailsVisible) { $rh - 166 } else { $rh - 75 }
     $script:grid.SetBounds(14,57,($cw - 28),$tableHeight)
     $script:detail.SetBounds(22,($rh - 96),($cw - 44),80)
-    $script:footer.SetBounds(24,($h - 32),($w - 48),26)
+}
+
+# State styling is presentation only. The original message stays intact for
+# diagnostic exports and tooltips; long messages scroll instead of being cut off.
+function Update-ActivityDisplay {
+    $text = $script:footer.Text
+    $heading = 'Current activity'
+    $color = [Drawing.Color]::FromArgb(0,115,220)
+    if ($text -match 'follow-up starts in (\d+) seconds') { $heading = 'Next check in ' + $Matches[1] + 's' }
+    elseif ($script:app.FatalSave -or $text -match '^(ERROR:|Report error:|Saved campaign could not)') {
+        $heading = 'Attention required'; $color = [Drawing.Color]::Firebrick
+    }
+    $script:activityHeading.Text = $heading
+    $script:activityHeading.ForeColor = $color; $script:activityAccent.BackColor = $color
+    $script:toolTips.SetToolTip($script:footer,$text)
+    $script:activityBody.AutoScrollPosition = [Drawing.Point]::Empty
 }
 
 function Update-ValidationThemeSummary {

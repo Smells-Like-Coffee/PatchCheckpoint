@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0-beta.6 - 2026-10-28
+
+- Moved bottom-of-window progress, countdown, error and export messages into a
+  rounded Current activity card on the right of the progress section.
+- Added a Next check in ... countdown heading, red error accents, wrapped messages
+  and scrolling for long notices. The card remains visible when worker bars are hidden.
+- Rebalanced progress/worker layout and reclaimed the former footer space for results.
+- Preserved message text, diagnostic capture and all assessment/countdown behavior.
+
 ## 0.9.0-beta.5 - 2026-10-28
 
 - Added Help > Diagnostic Export for background, local-only support ZIPs with
