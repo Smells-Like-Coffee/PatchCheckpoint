@@ -133,6 +133,7 @@ function Start-DiagnosticExport {
         FormatVersion = 1; CapturedAtUtc = [datetime]::UtcNow.ToString('o'); AppVersion = $script:AppVersion
         Runtime = [ordered]@{
             PowerShell = $PSVersionTable.PSVersion.ToString()
+            CompiledHost = $script:CompiledHost; DataRoot = $script:DataRoot
             Edition = $PSVersionTable.PSEdition; CLR = [Environment]::Version.ToString()
             OS = [Environment]::OSVersion.VersionString; Is64Bit = [Environment]::Is64BitProcess
             Apartment = [Threading.Thread]::CurrentThread.ApartmentState.ToString()

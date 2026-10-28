@@ -1,4 +1,33 @@
-# Patch Checkpoint 0.9.0-beta.6 - 2026-10-28
+# Patch Checkpoint 1.0.0 - 2026-10-28
+
+## Changes from 0.9.0-beta.6
+
+- Owner authorized the 1.0 transition. Application and executable versions are 1.0.0.
+- Collected functional sources, launchers, examples, tests and build code under app/;
+  documentation remains outside that folder for a cleaner GitHub landing page.
+- Added a native x64 C# WinForms host using Windows PowerShell 5.1 on its STA thread.
+  Application and help resources are embedded, so loose script files are not required
+  beside the distributed EXE. No installer or downloaded runtime is introduced.
+- Embedded resources are materialized in an owner/SYSTEM-only temporary directory
+  for the remote assessment file and diagnostic hashes. Normal exit deletes only
+  known files. Session settings are kept separately under LocalAppData\PatchCheckpoint.
+- Added source build and synthetic executable self-test workflows. Script mode
+  retains ordinary file loading; EXE mode executes its trusted embedded resources.
+- Existing CSV schema, campaign JSON and SCCM assessment decisions are retained.
+
+1.0.0 validation: 113 core/export assertions and 92 mocked remote assertions passed
+under Windows PowerShell 5.1. The relocated source application's complete synthetic
+GUI suite passed. The exact release EXE passed its isolated synthetic test for private
+runtime ACLs, WinRM command availability (without connecting), embedded help, STA UI,
+bounded workers, automatic verification, Excel/diagnostic exports, campaign restore,
+and activity layout. Normal exit removed its temporary resources. An existing
+self-test output file was preserved on rejection. PE headers identify an x64 Windows
+GUI executable; product/file version is 1.0.0.0. Authenticode status is NotSigned.
+
+Live WinRM/SCCM operations, organization endpoint-security policies, SmartScreen
+reputation and behavior on other Windows installations have not been validated for
+the EXE. The version transition is owner-authorized, not a claim of those tests.
+
 
 ## Changes from 0.9.0-beta.5
 

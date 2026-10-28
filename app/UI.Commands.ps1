@@ -161,7 +161,7 @@ function Get-AppHelpText {
         return "Patch Checkpoint $script:AppVersion`r`nWindows PowerShell $($PSVersionTable.PSVersion), $([IntPtr]::Size * 8)-bit`r`n.NET CLR $([Environment]::Version)`r`n`r`nChecks Software Center-visible Windows OS/.NET patches and strict OS pending-reboot indicators; PFRO is ignored.`r`n`r`nThe sole remote state change is the client verification scan (schedule 113). No updates are installed and no computers are restarted.`r`n`r`nCredentials are retained only in memory. See the User guide and SECURITY.md for scope and limitations.`r`n`r`nCreated with AI assistance using OpenAI Codex; requirements, review, and operational testing are directed by the project owner."
     }
     $name = switch ($Topic) { 'Guide' { 'USER-GUIDE.md' }; 'Troubleshooting' { 'TROUBLESHOOTING.md' }; 'ReleaseNotes' { 'CHANGELOG.md' } }
-    [IO.File]::ReadAllText((Join-Path $script:ProjectRoot $name))
+    [IO.File]::ReadAllText((Join-Path $script:DocumentationRoot $name))
 }
 
 function Show-AppHelp {

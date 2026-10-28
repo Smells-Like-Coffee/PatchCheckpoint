@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.0 - 2026-10-28
+
+- First owner-authorized 1.0 release; earlier 1.0.x tags remain historical test builds.
+- Moved runnable PowerShell files, launchers, examples, tests and build sources into
+  app/. Kept README, help, security and project documentation at the repository root.
+- Added PatchCheckpoint.exe: a native x64 Windows host with embedded application/help
+  resources, Windows PowerShell 5.1 STA runtime, and no third-party runtime downloads.
+- EXE resources use a new private runtime directory per process and normal-exit cleanup.
+  Per-user session settings persist under LocalAppData, outside the temporary code folder.
+- Added EXE build sources and an explicit synthetic self-test covering GUI, worker
+  concurrency, verification, Excel/diagnostic exports, embedded help and campaign resume.
+- Retained the PowerShell source distribution and existing campaign/report schemas.
+  The EXE and scripts remain unsigned; live EXE/endpoint-security pilot testing is required.
+
 ## 0.9.0-beta.6 - 2026-10-28
 
 - Moved bottom-of-window progress, countdown, error and export messages into a

@@ -24,27 +24,42 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '0.9.0-beta.6'
-$script:ProjectRoot = $PSScriptRoot
+$script:AppVersion = '1.0.0'
+$script:CompiledHost = $null -ne ('PatchCheckpoint.Program' -as [type])
+$script:ProjectRoot = if ($script:CompiledHost) { [PatchCheckpoint.Program]::RuntimeRoot } else { $PSScriptRoot }
+$script:DocumentationRoot = if ([IO.File]::Exists((Join-Path $script:ProjectRoot 'USER-GUIDE.md'))) { $script:ProjectRoot } else { [IO.Path]::GetDirectoryName($script:ProjectRoot) }
+$script:DataRoot = if ($script:CompiledHost) { Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PatchCheckpoint' } else { $script:ProjectRoot }
+if ($script:CompiledHost -and $Demo) { $script:DataRoot = Join-Path $script:DataRoot 'Demo' }
+if ($script:CompiledHost -and [PatchCheckpoint.Program]::SelfTestDataRoot) { $script:DataRoot = [PatchCheckpoint.Program]::SelfTestDataRoot }
+[void][IO.Directory]::CreateDirectory($script:DataRoot)
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or -not [Environment]::Is64BitProcess -or
     [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
     throw 'Use 64-bit Windows PowerShell 5.1 with -STA. See Launch.cmd.'
 }
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 [Windows.Forms.Application]::EnableVisualStyles()
-. (Join-Path $PSScriptRoot 'Validation.Core.ps1')
-. (Join-Path $PSScriptRoot 'UI.Theme.ps1')
-. (Join-Path $PSScriptRoot 'UI.Commands.ps1')
-. (Join-Path $PSScriptRoot 'Diagnostics.Export.ps1')
+# Compiled mode loads the trusted resources extracted from this EXE into its
+# private runtime directory. Source mode retains ordinary script-file loading.
+if ($script:CompiledHost) {
+    foreach ($name in @('Validation.Core.ps1','UI.Theme.ps1','UI.Commands.ps1','Diagnostics.Export.ps1')) {
+        . ([scriptblock]::Create([IO.File]::ReadAllText((Join-Path $script:ProjectRoot $name))))
+    }
+}
+else {
+    . (Join-Path $script:ProjectRoot 'Validation.Core.ps1')
+    . (Join-Path $script:ProjectRoot 'UI.Theme.ps1')
+    . (Join-Path $script:ProjectRoot 'UI.Commands.ps1')
+    . (Join-Path $script:ProjectRoot 'Diagnostics.Export.ps1')
+}
 $script:app = @{
     Rows = @(); Finished = @{}; Workers = (New-Object System.Collections.ArrayList)
     Credential = $null; Pool = $null; Running = $false; Stopping = $false
     Closing = $false; AllowClose = $false; BusyTick = $false; Locks = @()
     Next = 0; Done = 0; Clock = [Diagnostics.Stopwatch]::new()
-    Helpers = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Validation.Core.ps1'))
-    RemotePath = Join-Path $PSScriptRoot 'Remote.Assessment.ps1'
+    Helpers = [IO.File]::ReadAllText((Join-Path $script:ProjectRoot 'Validation.Core.ps1'))
+    RemotePath = Join-Path $script:ProjectRoot 'Remote.Assessment.ps1'
     FinishedPath = ''; UnfinishedPath = ''; FatalSave = $false; CampaignStarted = $false
-    SessionPath = Join-Path $PSScriptRoot $(if ($Demo) { 'Demo-Session.json' } else { 'Validation-Session.json' })
+    SessionPath = Join-Path $script:DataRoot $(if ($Demo) { 'Demo-Session.json' } else { 'Validation-Session.json' })
     ReportPool = $null; ReportJob = $null; ReportsDirty = $false
     PendingDispatch = (New-Object System.Collections.ArrayList)
     LastProgressMs = -1000; ProgressDirty = $true; ExportJob = $null; ExportNotice = ''
@@ -58,7 +73,7 @@ $script:app = @{
     RestoringFolder = $false
     DiagnosticJob = $null; DiagnosticNotice = ''
     DiagnosticEvents = (New-Object System.Collections.ArrayList)
-    DiagnosticsSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Diagnostics.Export.ps1'))
+    DiagnosticsSource = [IO.File]::ReadAllText((Join-Path $script:ProjectRoot 'Diagnostics.Export.ps1'))
 }
 
 # Workers have no GUI references. All remote invocation and waiting occurs away
@@ -768,9 +783,9 @@ Initialize-AppMenus
 $script:concurrency.Add_ValueChanged({ Update-WorkerProgressDisplay })
 if ($Demo) {
     $script:credentialButton.Enabled = $false; $script:accountLabel.Text = 'OFFLINE DEMO - no credentials or server actions'
-    $script:inputPath.Box.Text = Join-Path $PSScriptRoot 'Computers.example.csv'
-    $script:finishedPath.Box.Text = Join-Path $PSScriptRoot 'Demo-Finished.csv'
-    $script:unfinishedPath.Box.Text = Join-Path $PSScriptRoot 'Demo-Unfinished.csv'
+    $script:inputPath.Box.Text = Join-Path $script:ProjectRoot 'Computers.example.csv'
+    $script:finishedPath.Box.Text = Join-Path $script:DataRoot 'Demo-Finished.csv'
+    $script:unfinishedPath.Box.Text = Join-Path $script:DataRoot 'Demo-Unfinished.csv'
     Load-AppRows
 }
 # Resume local campaign settings without storing credentials or triggering work.

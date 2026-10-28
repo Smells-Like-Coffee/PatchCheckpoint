@@ -7,9 +7,9 @@ monthly patch cycle, which need attention, and which are still waiting for scan
 verification. Keep the results together, resolve issues on the affected machines,
 and return for the next check.
 
-**Beta: 0.9.0-beta.6** · Windows PowerShell 5.1 · SCCM / Configuration Manager
+**Version 1.0.0** · Windows x64 · SCCM / Configuration Manager
 
-[Download the current beta](https://github.com/Smells-Like-Coffee/PatchCheckpoint/releases/tag/v0.9.0-beta.6) · [User guide](USER-GUIDE.md) · [Troubleshooting](TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md)
+[Download for Windows](https://github.com/Smells-Like-Coffee/PatchCheckpoint/releases/tag/v1.0.0) · [User guide](USER-GUIDE.md) · [Troubleshooting](TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md)
 
 ![Patch Checkpoint showing campaign setup, progress, and computer status](docs/images/patch-checkpoint.png)
 
@@ -26,9 +26,9 @@ and return for the next check.
 
 ## Get started
 
-1. Download and extract the **PatchCheckpoint** ZIP from the release linked above. Keep all files together.
-2. Optionally run **Demo.cmd** to explore the interface without credentials or server access.
-3. Run **Launch.cmd**, select your input CSV and campaign folder, set credentials, and choose concurrency.
+1. Download and extract **PatchCheckpoint-1.0.0-Windows-x64.zip** from the release linked above.
+2. Open **PatchCheckpoint.exe**. To explore with fictional data, launch it with `-Demo`.
+3. Select your input CSV and campaign folder, set credentials, and choose concurrency.
 4. Click **Start wave**. The initial assessment includes one automatic verification follow-up after a 60-second scan window.
 5. Review the results. Use **Check pending verification** for scans that need more time, or **Reassess unfinished** after you fix reported issues.
 
@@ -64,16 +64,24 @@ It **does not install patches or restart computers**. Its only remote state-chan
 operation is an SCCM client verification scan; existing SCCM policies still operate
 independently. PASS describes the checked conditions, not overall application health.
 
-Run it from a domain-connected Windows administrative computer with **64-bit Windows
-PowerShell 5.1**, working Kerberos/WinRM access, and an account authorized to read the
+Run it from a domain-connected Windows administrative computer with **Windows
+PowerShell 5.1 and .NET Framework 4.x**, working Kerberos/WinRM access, and an account authorized to read the
 targets and request the scan. Targets must have SCCM installed. No extra PowerShell
 modules or Excel installation are needed. Follow your organization's script execution
-policy; the current scripts are unsigned.
+and application-control policies; the EXE and scripts are currently unsigned.
 
-This is **beta software**. Offline and synthetic GUI tests cover the workflow, and
-earlier builds have had owner-run live pilots. Validate the current build against a
-small representative group before broad use. See the [User Guide](USER-GUIDE.md) for
+**1.0.0 is the first owner-authorized 1.0 release.** Offline and synthetic GUI tests
+cover the workflow, and earlier builds have had owner-run live pilots. Validate the
+EXE against a small representative group before broad use. See the [User Guide](USER-GUIDE.md) for
 exact scope, permissions, verification rules, and recovery instructions.
+
+## Prefer PowerShell source?
+
+All runnable sources, launchers, examples, tests and EXE build files live in
+**[app/](app/)**. Documentation stays at the repository root. Download the
+**PatchCheckpoint-1.0.0-Source.zip** package and run **app\\Launch.cmd**; use
+**app\\Demo.cmd** for the synthetic demo. The EXE embeds the application files and
+does not require the source package beside it. It still uses Windows PowerShell 5.1.
 
 ## Built with AI assistance
 

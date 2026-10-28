@@ -68,7 +68,7 @@ function Invoke-InterfaceSmoke {
     if (@($script:form.Controls | Where-Object { $_ -is [Windows.Forms.Label] -and $_.Text -eq 'Patch Checkpoint' }).Count -or $script:setupCard.Top -gt 40) { throw 'The redundant banner still occupies space.' }
     if ($script:exportButton.Text -ne 'Export Report') { throw 'Export Report label is missing.' }
     if (-not $script:menuItems.ContainsKey('Diagnostics') -or $script:campaignOverview.Font.Size -lt 13) { throw 'Diagnostic Export menu and prominent campaign summary are required.' }
-    if ($script:AppVersion -notlike '0.*beta*') { throw 'Application version must identify a pre-1.0 beta.' }
+    if ($script:AppVersion -ne '1.0.0') { throw 'Application version must identify the authorized 1.0.0 release.' }
     if ($script:form.Text -notlike 'Patch Checkpoint *' -or (Get-AppHelpText 'About') -notlike '*Created with AI assistance*' -or (Get-AppHelpText 'Guide') -notlike '*# Patch Checkpoint User Guide*') { throw 'Application title, AI disclosure, or full User Guide branding is missing.' }
     if ($script:startButton.Parent -ne $script:checksCard -or $script:inputPath.Box.Parent -ne $script:setupCard -or $script:checksCard -eq $script:setupCard) { throw 'Setup and check actions must use separate panes.' }
     $expandedHeight = $script:grid.Height
@@ -89,7 +89,7 @@ function Invoke-InterfaceSmoke {
         if ($script:filter.Text -ne $status -or -not $script:filterMenuItems[$status].Checked) { throw 'Status summary click did not synchronize the table and View menu filter.' }
     }
     Reset-AppView
-    Write-Output 'PASS: beta version, separate/collapsible setup, clickable status summaries, tooltips, and worker-view toggle'
+    Write-Output 'PASS: release version, separate/collapsible setup, clickable status summaries, tooltips, and worker-view toggle'
     if (($script:menu.Items | ForEach-Object Text) -join '|' -ne '&File|&Actions|&View|&Help') { throw 'Native menu structure is incomplete.' }
     if ($script:menuItems['Export'].ShortcutKeys -ne [Windows.Forms.Keys]'Control,E' -or $script:menuItems['Guide'].ShortcutKeys -ne [Windows.Forms.Keys]::F1) { throw 'Menu shortcuts are missing.' }
     if ($script:rowMenu.Items.Count -ne 3 -or -not $script:menuItems['Initial'].Enabled -or $script:menuItems['Verify'].Enabled) { throw 'Initial command state or row-copy menu is incorrect.' }
@@ -442,7 +442,7 @@ $source = [IO.File]::ReadAllText((Join-Path $testRoot 'Start-PatchCheckpoint.ps1
 # Load trusted local helper text in-memory for this test harness only. No execution
 # policy settings are changed, and the production launcher uses ordinary -File.
 foreach ($helperName in @('Validation.Core.ps1','UI.Theme.ps1','UI.Commands.ps1','Diagnostics.Export.ps1')) {
-    $source = $source.Replace(". (Join-Path `$PSScriptRoot '$helperName')", ". ([scriptblock]::Create([IO.File]::ReadAllText((Join-Path `$PSScriptRoot '$helperName'))))")
+    $source = $source.Replace(". (Join-Path `$script:ProjectRoot '$helperName')", ". ([scriptblock]::Create([IO.File]::ReadAllText((Join-Path `$script:ProjectRoot '$helperName'))))")
 }
 $source = $source.Replace('$PSScriptRoot',("'" + $testRoot.Replace("'","''") + "'"))
 $source = $source.Replace('[Windows.Forms.Application]::Run($script:form)', 'Invoke-InterfaceSmoke')

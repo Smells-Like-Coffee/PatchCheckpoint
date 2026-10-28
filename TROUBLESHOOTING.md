@@ -121,3 +121,9 @@ Right-click the affected computer to copy its name, six-column status summary, o
 detailed results. Clipboard copies can include server identifiers and diagnostics;
 review and sanitize them before sharing. Never include credentials or real
 inventories in public issues. See SECURITY.md for the full security boundaries.
+
+## Version 1.0 EXE startup
+
+Use the Windows-x64 package and launch PatchCheckpoint.exe. Windows PowerShell 5.1 and .NET Framework 4.x must be available. The executable is unsigned; follow your organization's approved code-signing and allowlisting process rather than disabling security controls. Script mode remains available under app/ in the Source package.
+
+The EXE remembers its last campaign under %LOCALAPPDATA%\PatchCheckpoint. If upgrading from a script installation, use File > Resume campaign once and select its Campaign.json or existing Validation-Session.json. Do not start a new campaign to work around a missing last-session pointer.

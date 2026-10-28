@@ -11,6 +11,27 @@ Remote access uses Kerberos through WinRM. The application does not enable WinRM
 modify TrustedHosts, grant permissions, change execution policy, or delegate
 credentials to shares. Use an account with the required organizational permissions.
 
+## EXE distribution
+
+PatchCheckpoint.exe is a native x64 Windows host for the embedded Windows PowerShell
+5.1 application. It runs as the current user without requesting elevation, downloading
+a runtime, changing execution policy or supplying credentials on the command line.
+Embedded code is executable application content; organization application-control
+and code-signing requirements apply. This release is unsigned. Use an approved
+code-signing certificate and distribution channel before enforcing trusted-publisher
+deployment. Do not disable SmartScreen, Defender, AppLocker or WDAC to run it.
+
+Each process extracts only known embedded resources into a fresh temporary folder
+with inheritance disabled and access restricted to the current user and SYSTEM.
+Normal exit deletes only those known files and the now-empty folder; no recursive
+cleanup is used. A forced termination can leave this private folder behind.
+Campaigns and credentials are not written there. EXE session settings are kept under
+%LOCALAPPDATA%\PatchCheckpoint, separately from embedded program resources.
+
+An EXE is not encryption or a substitute for protected report storage. Windows
+PowerShell security controls still apply to the hosted engine. See Microsoft's
+[execution-policy guidance](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-5.1).
+
 ## Remote actions
 
 Assessment reads Software Center-visible Windows OS/.NET patch state, strict OS

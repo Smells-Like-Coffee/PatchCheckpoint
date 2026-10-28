@@ -9,6 +9,8 @@
 
 # Generated tests, extracted distributions, and release packages stay local.
 /UI-Test-*/
+/app/UI-Test-*/
+/app/ServerValidationTests-*/
 /ServerValidationTests-*/
 /ServerUpdateValidation-*/
 /PatchCheckpoint-*/

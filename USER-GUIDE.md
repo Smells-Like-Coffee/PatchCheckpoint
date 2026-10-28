@@ -14,22 +14,18 @@ complete Windows update inventory or an application-health assessment.
 
 Download the packaged ZIP and matching checksum from this repository's **Releases**
 page, or clone the repository and keep the source files together. The current
-version is **0.9.0-beta.6**. This is beta software; earlier 1.0.x tags were test-build
-labels, not a general-availability declaration. Future builds remain below 1.0 until
-the owner explicitly authorizes that transition. The owner has reported successful
-live testing of earlier builds; compatibility
-with other SCCM client versions and environments still requires validation.
+version is **1.0.0**, the first owner-authorized 1.0 release. Earlier 1.0.x tags were historical test-build labels. Existing owner-run live tests inform the workflow; the EXE still needs representative live and endpoint-security validation.
 
 Use the ZIP matching the version in the application title. Older downloads are
 historical test artifacts.
 
 ## Start here
 
-1. Extract the entire ZIP into a writable local folder on the administrative computer.
+1. Extract the Windows-x64 ZIP for the EXE, or the Source ZIP for PowerShell.
    Keep all supplied files together. Do not run directly inside the ZIP.
-2. Optionally double-click **Demo.cmd** first. It uses synthetic results only, creates
+2. Optionally launch **PatchCheckpoint.exe -Demo**, or **app\Demo.cmd** in the source package. It uses synthetic results only, creates
    Demo-Finished.csv and Demo-Unfinished.csv, and needs no credentials or network access.
-3. Double-click **Launch.cmd** for real assessments.
+3. Open **PatchCheckpoint.exe**, or **app\Launch.cmd** in the source package, for real assessments.
 4. Select a CSV containing a **ComputerName** or **SERVERNAME** header, supply
    credentials, choose concurrency and your **Campaign folder**, then click
    **Start wave**. Report filenames are generated inside that folder. The initial run includes one verification follow-up
@@ -97,7 +93,7 @@ the application. Replace the program files in the existing working folder with
 the new distribution. Keep Validation-Session.json and your operational CSVs;
 the report schema remains compatible. Relaunch and enter credentials again.
 
-Example input (also supplied as Computers.example.csv):
+Example input (also supplied as app/Computers.example.csv in the source package):
 
 ```csv
 ComputerName
@@ -109,16 +105,16 @@ SERVER02.contoso.com
 
 | File | Purpose |
 |---|---|
-| Launch.cmd | Launch the live GUI using 64-bit Windows PowerShell. |
-| Demo.cmd | Exercise the interface with synthetic data and no remote calls. |
-| Start-PatchCheckpoint.ps1 | GUI, campaign continuation, and bounded workers. |
-| Remote.Assessment.ps1 | Target-side readiness, update/reboot, and scan assessment. |
-| Validation.Core.ps1 | CSV contract, evidence verification, and report persistence. |
-| UI.Theme.ps1 | Native Windows Forms styling and custom controls. |
-| UI.Commands.ps1 | Menus, shortcuts, view controls, local help, and row-copy commands. |
-| Diagnostics.Export.ps1 | Local diagnostic snapshots and background support ZIP creation. |
-| Run-Tests.cmd | Core and mocked remote logic tests. |
-| Test-Interface.ps1 | Actual GUI tests using synthetic workers. |
+| app/Launch.cmd | Launch the live GUI using 64-bit Windows PowerShell. |
+| app/Demo.cmd | Exercise the interface with synthetic data and no remote calls. |
+| app/Start-PatchCheckpoint.ps1 | GUI, campaign continuation, and bounded workers. |
+| app/Remote.Assessment.ps1 | Target-side readiness, update/reboot, and scan assessment. |
+| app/Validation.Core.ps1 | CSV contract, evidence verification, and report persistence. |
+| app/UI.Theme.ps1 | Native Windows Forms styling and custom controls. |
+| app/UI.Commands.ps1 | Menus, shortcuts, view controls, local help, and row-copy commands. |
+| app/Diagnostics.Export.ps1 | Local diagnostic snapshots and background support ZIP creation. |
+| app/Run-Tests.cmd | Core and mocked remote logic tests. |
+| app/Test-Interface.ps1 | Actual GUI tests using synthetic workers. |
 | BUILD-NOTES.md | Build history, test details, and validation boundaries. |
 | TROUBLESHOOTING.md | Choosing waves, interpreting pending verification, and recovery guidance. |
 
@@ -142,7 +138,7 @@ this Kerberos workflow. Both server and workstation names are accepted.
   has these rights; the tool does not grant any permissions.
 - Writable output folders. Prefer local NTFS report storage for the first pilot.
   Other filesystems/shares must support .NET File.Replace and exclusive file handles.
-- Organization-approved execution policy/signatures. Launch.cmd deliberately does
+- Organization-approved script and executable policies/signatures. app/Launch.cmd deliberately does
   not bypass policy. If downloaded scripts are blocked, review their contents and
   follow your organization's unblocking/signing procedure. This build is unsigned.
 
@@ -167,9 +163,9 @@ Windows version and desktop theme. UI.Theme.ps1 must remain with the other scrip
   table and tracking CSV with their prior assessment time. PASS is never rechecked
   implicitly. Progress counts only the computers selected for the current wave.
 - Campaign.json stores resume settings beside the reports. Validation-Session.json
-  stores the most recent campaign paths and concurrency beside the scripts
+  stores the most recent campaign paths and concurrency under LocalAppData\PatchCheckpoint for the EXE, or beside the scripts for source mode
   using atomic replacement, with a .bak snapshot. It contains no credentials.
-  Demo mode uses separate Demo-Session.json settings. Keep the script folder writable.
+  Demo mode uses separate settings. EXE demo state is in LocalAppData\PatchCheckpoint\Demo; keep the source app folder writable when using scripts.
   The CSVs are the authoritative computer state; keep all tracking columns intact.
   Missing or invalid saved reports block automatic continuation and display an error.
 - When no verification is pending, its action reports the remaining attention count
@@ -493,7 +489,7 @@ compatibility need a small pilot before operational reliance.
 
 ```powershell
 # Increase per-computer timeout; preserve the default two-minute startup guard.
-powershell.exe -NoProfile -STA -File .\Start-PatchCheckpoint.ps1 -TimeoutSeconds 240 -MinimumUptimeSeconds 120
+powershell.exe -NoProfile -STA -File .\app\Start-PatchCheckpoint.ps1 -TimeoutSeconds 240 -MinimumUptimeSeconds 120
 ```
 
 The initial assessment includes one automatic verification follow-up after 60 seconds;
@@ -509,7 +505,7 @@ exercise actual GUI controls, background runspaces, two waves and graceful stop:
 
 ```powershell
 # Opens only the synthetic demo; saves evidence in a new UI-Test-* directory.
-powershell.exe -NoProfile -STA -File .\Test-Interface.ps1
+powershell.exe -NoProfile -STA -File .\app\Test-Interface.ps1
 ```
 
 ## Technical references
@@ -526,3 +522,13 @@ Patch Checkpoint was created with OpenAI Codex assistance for implementation, do
 ## Current activity card
 
 Progress messages, report/export notices, errors and the next-check countdown appear in the Current activity card on the right of the progress section. The heading becomes Next check in ... during the automatic verification wait; errors use a red accent. Long messages wrap and can be scrolled. Worker bars remain on the left, and hiding them does not hide the activity card. No countdown timing or assessment behavior changes.
+
+## Executable and source distributions
+
+The Windows-x64 package includes PatchCheckpoint.exe with the application and help embedded. It uses Windows PowerShell 5.1 and .NET Framework 4.x already installed on the administrative computer; it does not launch a child PowerShell console, download modules, or request elevation. The EXE is unsigned.
+
+The Source package retains all runnable files under app/ and documentation at the root. Run app/Launch.cmd or app/Demo.cmd; do not flatten that structure, because Help locates the root documentation. Build sources are in app/build/.
+
+To move from an earlier build or between EXE and source, use File > Resume campaign and select the existing Campaign.json or Validation-Session.json. Credentials must be reentered. Existing campaign folders and tracking columns remain compatible; no data migration or fresh scan request is required just because the packaging changed.
+
+EXE last-campaign settings persist in %LOCALAPPDATA%\PatchCheckpoint\Validation-Session.json. They are not stored beside the EXE or in its temporary resource folder. Use a separate Windows profile for independent per-user settings. A forced EXE termination may leave a private temporary resource folder; normal exit removes it.
