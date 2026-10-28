@@ -1,4 +1,4 @@
-# Contributing
+# Contributing to Patch Checkpoint
 
 This project targets 64-bit Windows PowerShell 5.1 with Windows Forms. Preserve
 the native deployment model: no downloaded runtime dependencies, no execution

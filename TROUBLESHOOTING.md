@@ -1,4 +1,4 @@
-# Troubleshooting
+# Patch Checkpoint troubleshooting
 
 ## OS/.NET scope and ignored PFRO
 
@@ -67,8 +67,7 @@ not establish scan completion, and supported layouts may vary across client vers
 
 Resolve output permissions, file locks, storage capacity, or connectivity. Prefer
 local report storage. Do not edit or delete tracking columns to force a PASS.
-After a report failure, recent displayed results may be unsaved; Export current
-view can preserve a display snapshot under a separate filename. Reopen after
+After a report failure, recent displayed results may be unsaved; Export Report can preserve a display snapshot under a separate filename. Reopen after
 resolving the error and review the reports and .bak snapshots before continuing.
 
 Durable dispatch intents prevent silent duplicate submissions after interruption.
@@ -77,7 +76,7 @@ only after determining that doing so is appropriate for the affected computer.
 
 ## Resume campaign
 
-File > Resume campaign opens a Validation-Session.json file. The reports referenced
+File > Resume campaign opens Campaign.json (or an older Validation-Session.json). The reports referenced
 by that file must still exist. The original inventory may be archived after the
 campaign starts. If the working folder or reports have moved, review the saved paths.
 Invalid sessions are rejected before replacing the current campaign. Credentials
@@ -87,7 +86,7 @@ are never saved and must be entered again after restarting the application.
 
 View > Reset view restores Unfinished, clears the search, and resets sorting and
 column proportions. View > Show details pane toggles the lower evidence panel.
-Export current view follows the visible filter, search, and sort; it is a reporting
+Export Report offers Excel for all campaign rows on status tabs, or CSV for the visible filter, search, and sort. Each is a reporting
 snapshot with six columns, not a tracking file suitable for campaign recovery.
 
 Use File > Open reports folder for each output location. A .lock file can remain

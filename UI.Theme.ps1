@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Applies the light desktop visual design to Server Update Validation.
+    Applies the light desktop visual design to Patch Checkpoint.
 .DESCRIPTION
     Uses built-in Windows Forms and GDI+ for rounded cards, painted buttons, blue
     progress, readable tables, and accessible status badges. No external UI library

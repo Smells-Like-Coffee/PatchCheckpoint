@@ -1,4 +1,23 @@
-# Build 0.9.0-beta.3 - 2026-10-28
+# Patch Checkpoint 0.9.0-beta.4 - 2026-10-28
+
+## Changes from 0.9.0-beta.3
+
+- Rebranded the title, dialogs, About, script descriptions, launcher, repository
+  links, package names, and new-campaign Documents folder to Patch Checkpoint.
+- Renamed the main script to Start-PatchCheckpoint.ps1 and updated the GUI harness.
+- Separated a concise README landing page from the complete USER-GUIDE.md, which
+  remains available in the application's Help menu. Disclosed AI assistance in both
+  the README and About; included an actual synthetic application screenshot.
+- Kept Validation-Session.json as the local resume-pointer filename for compatibility;
+  existing campaign paths are restored as saved, without moving or renaming user data.
+- This build changes branding and documentation, not remote assessment decisions.
+
+Beta.4 validation: 97 core assertions and 92 mocked remote assertions passed under
+Windows PowerShell 5.1. The actual synthetic GUI suite passed with the renamed
+entry script, branded title and About disclosure, separate User Guide, campaign
+restore, reporting, and cancellation. All eight scripts parsed; local documentation
+links and the published synthetic screenshot were checked. Live endpoint and desktop
+Excel validation remain outside this build's automated checks.
 
 ## Changes from 0.9.0-beta.2
 

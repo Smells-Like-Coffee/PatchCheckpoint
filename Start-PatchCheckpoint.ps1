@@ -1,7 +1,7 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-    Opens the Server Update Validation GUI for one post-reboot assessment wave.
+    Opens the Patch Checkpoint GUI for one post-reboot assessment wave.
 .DESCRIPTION
     Loads names and carried-forward verification state from a CSV. Uses a bounded
     runspace pool for Kerberos WinRM queries and saves PASS/unfinished snapshots as
@@ -14,7 +14,7 @@
 .PARAMETER MinimumUptimeSeconds
     Conservative startup guard; recent boots are reported NOT READY without waiting.
 .EXAMPLE
-    powershell.exe -NoProfile -STA -File .\Start-ServerUpdateValidation.ps1
+    powershell.exe -NoProfile -STA -File .\Start-PatchCheckpoint.ps1
 #>
 [CmdletBinding()]
 param(
@@ -24,7 +24,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '0.9.0-beta.3'
+$script:AppVersion = '0.9.0-beta.4'
 $script:ProjectRoot = $PSScriptRoot
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or -not [Environment]::Is64BitProcess -or
     [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
@@ -101,7 +101,7 @@ $script:workerSource = {
 
 function Show-AppError {
     param([string]$Message)
-    [void][Windows.Forms.MessageBox]::Show($script:form,$Message,'Server Update Validation','OK','Error')
+    [void][Windows.Forms.MessageBox]::Show($script:form,$Message,'Patch Checkpoint','OK','Error')
 }
 function New-Label {
     param([string]$Text,[int]$X,[int]$Y,[int]$Width,[int]$Height = 24)
@@ -170,7 +170,7 @@ function Load-AppRows {
         if (-not $script:finishedPath.Box.Text -or -not $script:unfinishedPath.Box.Text) {
             $documents = [Environment]::GetFolderPath('MyDocuments')
             $folder = if ($script:campaignFolder.Box.Text.Trim()) { [IO.Path]::GetFullPath($script:campaignFolder.Box.Text.Trim()) }
-                else { Join-Path $documents ('Server Update Validation\Campaigns\' + [IO.Path]::GetFileNameWithoutExtension($script:inputPath.Box.Text) + '-' + [datetime]::Now.ToString('yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,6)) }
+                else { Join-Path $documents ('Patch Checkpoint\Campaigns\' + [IO.Path]::GetFileNameWithoutExtension($script:inputPath.Box.Text) + '-' + [datetime]::Now.ToString('yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,6)) }
             $script:campaignFolder.Box.Text = $folder
             $script:finishedPath.Box.Text = Join-Path $folder 'Finished.csv'
             $script:unfinishedPath.Box.Text = Join-Path $folder 'Unfinished.csv'
@@ -616,7 +616,7 @@ function Invoke-AppTick {
 
 # Build a resizable, keyboard-accessible desktop layout using only built-in .NET.
 $script:form = [Windows.Forms.Form]::new()
-$script:form.Text = 'Server Update Validation ' + $script:AppVersion + $(if ($Demo) { ' [OFFLINE DEMO]' } else { '' })
+$script:form.Text = 'Patch Checkpoint ' + $script:AppVersion + $(if ($Demo) { ' [OFFLINE DEMO]' } else { '' })
 $script:form.ClientSize = [Drawing.Size]::new(1040,750); $script:form.MinimumSize = [Drawing.Size]::new(1056,789)
 $script:form.StartPosition = 'CenterScreen'; $script:form.Font = [Drawing.Font]::new('Segoe UI',10)
 $script:form.BackColor = [Drawing.Color]::FromArgb(247,249,252)

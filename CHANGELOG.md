@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.0-beta.4 - 2026-10-28
+
+- Renamed the application and repository to Patch Checkpoint. The entry script is
+  Start-PatchCheckpoint.ps1; Launch.cmd and the application repository link follow the new name.
+- Reworked the README as a concise landing page with a real synthetic screenshot,
+  quick start, status guide, and explicit AI-development disclosure.
+- Preserved the detailed instructions in USER-GUIDE.md and linked the in-app Help
+  menu to it. Added the AI disclosure to About as well.
+- Renamed distribution ZIPs and the default Documents folder for new campaigns.
+  Existing campaign/report formats and Validation-Session.json remain compatible.
+
 ## 0.9.0-beta.3 - 2026-10-28
 
 - Added an editable Campaign folder field and native folder picker. Selecting a

@@ -1,4 +1,4 @@
-# Security and operational boundaries
+# Patch Checkpoint security and operational boundaries
 
 ## Credentials and access
 

@@ -155,16 +155,16 @@ function Reset-AppView {
 function Get-AppHelpText {
     param([ValidateSet('Guide','Troubleshooting','ReleaseNotes','About')][string]$Topic)
     if ($Topic -eq 'About') {
-        return "Server Update Validation $script:AppVersion`r`nWindows PowerShell $($PSVersionTable.PSVersion), $([IntPtr]::Size * 8)-bit`r`n.NET CLR $([Environment]::Version)`r`n`r`nChecks Software Center-visible waiting updates and Windows/SCCM pending reboot indicators.`r`n`r`nThe sole remote state change is the client verification scan (schedule 113). No updates are installed and no computers are restarted.`r`n`r`nCredentials are retained only in memory. See the User guide and SECURITY.md for scope and limitations."
+        return "Patch Checkpoint $script:AppVersion`r`nWindows PowerShell $($PSVersionTable.PSVersion), $([IntPtr]::Size * 8)-bit`r`n.NET CLR $([Environment]::Version)`r`n`r`nChecks Software Center-visible Windows OS/.NET patches and strict OS pending-reboot indicators; PFRO is ignored.`r`n`r`nThe sole remote state change is the client verification scan (schedule 113). No updates are installed and no computers are restarted.`r`n`r`nCredentials are retained only in memory. See the User guide and SECURITY.md for scope and limitations.`r`n`r`nCreated with AI assistance using OpenAI Codex; requirements, review, and operational testing are directed by the project owner."
     }
-    $name = switch ($Topic) { 'Guide' { 'README.md' }; 'Troubleshooting' { 'TROUBLESHOOTING.md' }; 'ReleaseNotes' { 'CHANGELOG.md' } }
+    $name = switch ($Topic) { 'Guide' { 'USER-GUIDE.md' }; 'Troubleshooting' { 'TROUBLESHOOTING.md' }; 'ReleaseNotes' { 'CHANGELOG.md' } }
     [IO.File]::ReadAllText((Join-Path $script:ProjectRoot $name))
 }
 
 function Show-AppHelp {
     param([string]$Topic)
     $text = Get-AppHelpText $Topic
-    $dialog = [Windows.Forms.Form]::new(); $dialog.Text = 'Server Update Validation - ' + $Topic
+    $dialog = [Windows.Forms.Form]::new(); $dialog.Text = 'Patch Checkpoint - ' + $Topic
     $dialog.Size = [Drawing.Size]::new(850,650); $dialog.MinimumSize = [Drawing.Size]::new(550,350)
     $dialog.StartPosition = 'CenterParent'
     $body = [Windows.Forms.RichTextBox]::new(); $body.Dock = 'Fill'; $body.ReadOnly = $true
@@ -203,7 +203,7 @@ function Invoke-AppCommand {
             'ResetView' { Reset-AppView }
             { $_ -in @('CopyName','CopySummary','CopyDetails') } { [Windows.Forms.Clipboard]::SetText((Get-AppCopyText $Command)) }
             { $_ -in @('Guide','Troubleshooting','ReleaseNotes','About') } { Show-AppHelp $Command }
-            'Repository' { [void][Diagnostics.Process]::Start('https://github.com/Smells-Like-Coffee/Invoke-ServerUpdateValidate') }
+            'Repository' { [void][Diagnostics.Process]::Start('https://github.com/Smells-Like-Coffee/PatchCheckpoint') }
         }
         Update-AppCommandState
     }

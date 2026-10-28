@@ -11,6 +11,7 @@
 /UI-Test-*/
 /ServerValidationTests-*/
 /ServerUpdateValidation-*/
+/PatchCheckpoint-*/
 /release/
 *.zip
 *.zip.sha256
@@ -21,3 +22,5 @@
 Thumbs.db
 Desktop.ini
 *.log
+Campaign.json
+Campaign.json.bak

@@ -36,7 +36,7 @@ function Invoke-InterfaceSmoke {
     $script:finishedPath.Box.Clear(); $script:unfinishedPath.Box.Clear()
     Load-AppRows
     $generated = [IO.Path]::GetDirectoryName($script:finishedPath.Box.Text)
-    if ($generated -ne [IO.Path]::GetDirectoryName($script:unfinishedPath.Box.Text) -or $generated -notlike '*Server Update Validation\Campaigns\*' -or [IO.Directory]::Exists($generated)) { throw 'Loading an inventory must generate a unique campaign destination without creating files yet.' }
+    if ($generated -ne [IO.Path]::GetDirectoryName($script:unfinishedPath.Box.Text) -or $generated -notlike '*Patch Checkpoint\Campaigns\*' -or [IO.Directory]::Exists($generated)) { throw 'Loading an inventory must generate a unique campaign destination without creating files yet.' }
     Write-Output 'PASS: inventory-only setup generates campaign destinations without requiring prepared reports'
     $occupied = Join-Path $script:testFolder 'Existing campaign'
     [void][IO.Directory]::CreateDirectory($occupied)
@@ -51,9 +51,10 @@ function Invoke-InterfaceSmoke {
     Write-Output 'PASS: chosen campaign folder relocates the whole campaign and rejects existing campaign files'
     $script:concurrency.Value = 2
     $script:form.Show()
-    if (@($script:form.Controls | Where-Object { $_ -is [Windows.Forms.Label] -and $_.Text -eq 'Server Update Validation' }).Count -or $script:setupCard.Top -gt 40) { throw 'The redundant banner still occupies space.' }
+    if (@($script:form.Controls | Where-Object { $_ -is [Windows.Forms.Label] -and $_.Text -eq 'Patch Checkpoint' }).Count -or $script:setupCard.Top -gt 40) { throw 'The redundant banner still occupies space.' }
     if ($script:exportButton.Text -ne 'Export Report') { throw 'Export Report label is missing.' }
     if ($script:AppVersion -notlike '0.*beta*') { throw 'Application version must identify a pre-1.0 beta.' }
+    if ($script:form.Text -notlike 'Patch Checkpoint *' -or (Get-AppHelpText 'About') -notlike '*Created with AI assistance*' -or (Get-AppHelpText 'Guide') -notlike '*# Patch Checkpoint User Guide*') { throw 'Application title, AI disclosure, or full User Guide branding is missing.' }
     if ($script:startButton.Parent -ne $script:checksCard -or $script:inputPath.Box.Parent -ne $script:setupCard -or $script:checksCard -eq $script:setupCard) { throw 'Setup and check actions must use separate panes.' }
     $expandedHeight = $script:grid.Height
     Invoke-AppCommand 'Setup'
@@ -247,9 +248,25 @@ function Invoke-InterfaceSmoke {
     if ($script:app.Done -ne 8 -or @($script:app.Rows | Where-Object Status -eq 'PASS').Count) { throw 'Later wave rechecked finished computers.' }
     if ($script:table.Rows.Count -ne 12) { throw 'Finished computers must remain viewable.' }
     if ($script:statusCountLabels['PASS'].Text -ne '4  PASS') { throw 'PASS summary must retain the campaign finished count.' }
+    # Use fictional display paths for the published demo screenshot. Keep the
+    # real test storage unchanged and restore every control before continuing.
+    $previewControls = @($script:inputPath.Box,$script:campaignFolder.Box,$script:finishedPath.Box,$script:unfinishedPath.Box)
+    $previewValues = @($previewControls | ForEach-Object Text)
+    $script:app.RestoringFolder = $true
     $bitmap = [Drawing.Bitmap]::new($script:form.Width,$script:form.Height)
-    try { $script:form.DrawToBitmap($bitmap,[Drawing.Rectangle]::new(0,0,$bitmap.Width,$bitmap.Height)); $bitmap.Save((Join-Path $script:testFolder 'GUI-preview.png')) }
-    finally { $bitmap.Dispose() }
+    try {
+        $previewControls[0].Text = 'C:\PatchCheckpoint\Computers.csv'
+        $previewControls[1].Text = 'C:\PatchCheckpoint\Campaigns\October'
+        $previewControls[2].Text = 'C:\PatchCheckpoint\Campaigns\October\Finished.csv'
+        $previewControls[3].Text = 'C:\PatchCheckpoint\Campaigns\October\Unfinished.csv'
+        $script:form.DrawToBitmap($bitmap,[Drawing.Rectangle]::new(0,0,$bitmap.Width,$bitmap.Height))
+        $bitmap.Save((Join-Path $script:testFolder 'GUI-preview.png'))
+    }
+    finally {
+        $bitmap.Dispose()
+        for ($index = 0; $index -lt $previewControls.Count; $index++) { $previewControls[$index].Text = $previewValues[$index] }
+        $script:app.RestoringFolder = $false
+    }
     Write-Output 'PASS: session recovery, original input unchanged, finished computers excluded from later waves but viewable'
 
     # Simulate resolving one known issue. Reassessment discovers its clean state
@@ -366,7 +383,7 @@ function Invoke-InterfaceSmoke {
     $script:form.Hide()
     Write-Output "GUI evidence saved: $script:testFolder"
 }
-$source = [IO.File]::ReadAllText((Join-Path $testRoot 'Start-ServerUpdateValidation.ps1'))
+$source = [IO.File]::ReadAllText((Join-Path $testRoot 'Start-PatchCheckpoint.ps1'))
 # Load trusted local helper text in-memory for this test harness only. No execution
 # policy settings are changed, and the production launcher uses ordinary -File.
 foreach ($helperName in @('Validation.Core.ps1','UI.Theme.ps1','UI.Commands.ps1')) {

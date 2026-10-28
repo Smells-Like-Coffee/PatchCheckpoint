@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Shared data, verification, and report functions for Server Update Validation.
+    Shared data, verification, and report functions for Patch Checkpoint.
 .DESCRIPTION
     Defines the CSV contract, validates carried-forward scan evidence, and writes
     recoverable report snapshots. It performs no remote actions when loaded.
