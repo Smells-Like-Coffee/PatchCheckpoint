@@ -97,7 +97,9 @@ It is not anonymized or encrypted. Review it before sharing and use a trusted ch
 '@
         Add-DiagnosticText 'Manifest.json' (ConvertTo-Json -InputObject @($manifest) -Depth 5)
         $archive.Dispose(); $archive = $null
-        if ([IO.File]::Exists($Path)) { [IO.File]::Replace($temp,$Path,$null) }
+        # PowerShell can bind $null to an empty string for a .NET string
+        # parameter. NullString explicitly requests no replacement backup file.
+        if ([IO.File]::Exists($Path)) { [IO.File]::Replace($temp,$Path,[System.Management.Automation.Language.NullString]::Value) }
         else { [IO.File]::Move($temp,$Path) }
     }
     finally {

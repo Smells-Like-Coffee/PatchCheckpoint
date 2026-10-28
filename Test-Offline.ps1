@@ -245,6 +245,8 @@ try {
         }
     }
     finally { $archive.Dispose() }
+    Save-DiagnosticBundle $bundlePath (ConvertTo-Json -InputObject $snapshot -Depth 8) $attachments $testRoot
+    Assert-Equal ([IO.File]::Exists($bundlePath)) $true 'A completed diagnostic export can replace an existing ZIP'
     $before = (Get-FileHash -LiteralPath $bundlePath -Algorithm SHA256).Hash
     $rejected = $false
     try { Save-DiagnosticBundle $bundlePath 'invalid JSON' @() $testRoot } catch { $rejected = $true }

@@ -17,7 +17,7 @@
   Attention means ACTION REQUIRED, NOT READY or UNABLE TO DETERMINE, not queued/running.
 - Existing report schemas, SCCM decisions and wave selection remain unchanged.
 
-Beta.5 validation: 112 core/export assertions and 92 mocked remote assertions passed
+Beta.5 validation: 113 core/export assertions and 92 mocked remote assertions passed
 under Windows PowerShell 5.1. Actual GUI tests passed for active-wave exports,
 credential canary exclusion, full campaign capture, export after a report failure,
 destination errors, existing wave/recovery flows, and the prominent outcome totals.
