@@ -29,11 +29,30 @@ function Wait-StatusExport {
     if ($script:app.ExportJob -or $script:app.ExportNotice -eq 'Export failed') { throw 'Status export failed to finish.' }
 }
 function Invoke-InterfaceSmoke {
+    # Keep the real timer-driven follow-up, shortening only its scan wait for
+    # synthetic workers. Live assessments retain the 60-second window.
+    $script:app.InitialVerificationDelaySeconds = 1
     $script:app.SessionPath = Join-Path $script:testFolder 'Test-Session.json'
-    $script:finishedPath.Box.Text = Join-Path $script:testFolder 'Finished.csv'
-    $script:unfinishedPath.Box.Text = Join-Path $script:testFolder 'Unfinished.csv'
+    $script:finishedPath.Box.Clear(); $script:unfinishedPath.Box.Clear()
+    Load-AppRows
+    $generated = [IO.Path]::GetDirectoryName($script:finishedPath.Box.Text)
+    if ($generated -ne [IO.Path]::GetDirectoryName($script:unfinishedPath.Box.Text) -or $generated -notlike '*Server Update Validation\Campaigns\*' -or [IO.Directory]::Exists($generated)) { throw 'Loading an inventory must generate a unique campaign destination without creating files yet.' }
+    Write-Output 'PASS: inventory-only setup generates campaign destinations without requiring prepared reports'
+    $occupied = Join-Path $script:testFolder 'Existing campaign'
+    [void][IO.Directory]::CreateDirectory($occupied)
+    [IO.File]::WriteAllText((Join-Path $occupied 'Campaign.json'),'preserve this campaign')
+    $script:campaignFolder.Box.Text = $occupied
+    $blocked = $false
+    try { Start-AppWave -Mode Initial } catch { $blocked = $_.Exception.Message -like '*already contains campaign files*' }
+    if (-not $blocked -or $script:app.Running -or [IO.File]::ReadAllText((Join-Path $occupied 'Campaign.json')) -ne 'preserve this campaign') { throw 'New campaign silently reused an occupied destination.' }
+    $chosen = Join-Path $script:testFolder 'Chosen campaign folder'
+    $script:campaignFolder.Box.Text = $chosen
+    if ($script:finishedPath.Box.Text -ne (Join-Path $chosen 'Finished.csv') -or $script:unfinishedPath.Box.Text -ne (Join-Path $chosen 'Unfinished.csv') -or [IO.Directory]::Exists($chosen)) { throw 'Editing the folder must relocate both proposed reports without creating files.' }
+    Write-Output 'PASS: chosen campaign folder relocates the whole campaign and rejects existing campaign files'
     $script:concurrency.Value = 2
     $script:form.Show()
+    if (@($script:form.Controls | Where-Object { $_ -is [Windows.Forms.Label] -and $_.Text -eq 'Server Update Validation' }).Count -or $script:setupCard.Top -gt 40) { throw 'The redundant banner still occupies space.' }
+    if ($script:exportButton.Text -ne 'Export Report') { throw 'Export Report label is missing.' }
     if ($script:AppVersion -notlike '0.*beta*') { throw 'Application version must identify a pre-1.0 beta.' }
     if ($script:startButton.Parent -ne $script:checksCard -or $script:inputPath.Box.Parent -ne $script:setupCard -or $script:checksCard -eq $script:setupCard) { throw 'Setup and check actions must use separate panes.' }
     $expandedHeight = $script:grid.Height
@@ -101,17 +120,33 @@ function Invoke-InterfaceSmoke {
     $bitmap = [Drawing.Bitmap]::new($script:form.Width,$script:form.Height)
     try { $script:form.DrawToBitmap($bitmap,[Drawing.Rectangle]::new(0,0,$bitmap.Width,$bitmap.Height)); $bitmap.Save((Join-Path $script:testFolder 'GUI-preview.png')) }
     finally { $bitmap.Dispose() }
-    Wait-DemoWave
+    # Observe the saved first pass before the automatic verification follow-up.
+    $deadline = [datetime]::UtcNow.AddSeconds(30)
+    while ($null -eq $script:app.AutoVerifyDue -and [datetime]::UtcNow -lt $deadline) {
+        Invoke-AppTick; [Windows.Forms.Application]::DoEvents(); [Threading.Thread]::Sleep(25)
+    }
+    if ($null -eq $script:app.AutoVerifyDue) { throw 'Initial assessment did not schedule its automatic follow-up.' }
+    # Give the assertions below time to inspect the checkpointed first pass.
+    $script:app.AutoVerifyDue = [datetime]::UtcNow.AddSeconds(10)
     $bitmap = [Drawing.Bitmap]::new($script:form.Width,$script:form.Height)
     try { $script:form.DrawToBitmap($bitmap,[Drawing.Rectangle]::new(0,0,$bitmap.Width,$bitmap.Height)); $bitmap.Save((Join-Path $script:testFolder 'GUI-preview.png')) }
     finally { $bitmap.Dispose() }
     if (@(Import-Csv -LiteralPath $script:app.UnfinishedPath).Count -ne 12) { throw 'First wave must retain all computers.' }
     if (@($script:app.Rows | Where-Object Status -eq 'VERIFICATION PENDING').Count -ne 4) { throw 'First wave did not request four synthetic scans.' }
     Write-Output 'PASS: actual GUI, runspace concurrency, first-wave reports'
+    # Finish the automatic follow-up before testing idle preference persistence.
+    $script:app.AutoVerifyDue = [datetime]::UtcNow
+    Wait-DemoWave
+    if ($script:app.Finished.Count -ne 4 -or $script:app.WaveMode -ne 'Verification') { throw 'Automatic follow-up did not confirm four clean computers.' }
+    $resumePath = Join-Path ([IO.Path]::GetDirectoryName($script:app.UnfinishedPath)) 'Campaign.json'
+    $resumed = Read-ValidationCampaign $resumePath
+    if ($resumed.Finished.Count -ne 4 -or $resumed.Rows.Count -ne 8 -or ([IO.File]::ReadAllText($resumePath)) -match 'Password|Credential') { throw 'Generated campaign resume file is missing, invalid, or contains credentials.' }
+    Write-Output 'PASS: initial assessment automatically verifies only pending computers'
     Invoke-AppCommand 'WorkerProgress'
     $savedView = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($script:app.SessionPath))
     if ($savedView.ShowWorkerProgress -ne $false) { throw 'Worker-bar preference must be saved when idle.' }
     Restore-AppSession
+    if ($script:campaignFolder.Box.Text -ne $chosen -or $script:campaignFolder.Box.Enabled -or $script:campaignFolder.Button.Enabled) { throw 'Campaign folder must restore and remain locked for subsequent waves.' }
     if ($script:app.ShowWorkerProgress -or $script:menuItems['WorkerProgress'].Checked -or $script:workerFlow.Visible) { throw 'Saved worker-bar preference must survive campaign restore.' }
     Invoke-AppCommand 'WorkerProgress'
     Invoke-AppCommand 'Setup'
@@ -129,9 +164,8 @@ function Invoke-InterfaceSmoke {
     # Leave the original input untouched. The application must carry the saved
     # requests forward automatically, without any changes to paths or settings.
     $originalInput = $script:inputPath.Box.Text
+    # With no pending rows, an additional verification click is a harmless no-op.
     $script:menuItems['Verify'].PerformClick(); Wait-DemoWave
-    if ($script:app.Done -ne 4 -or $script:app.WorkIndices.Count -ne 4) { throw 'Verification-only wave assessed non-pending computers.' }
-    if ($script:percentLabel.Text -ne '100%') { throw 'Overall percentage must use selected work count, not all campaign rows.' }
     foreach ($row in $script:app.Rows | Where-Object { $skippedBefore.ContainsKey($_.ComputerName) }) {
         if ((ConvertTo-Json -InputObject $row -Compress) -ne $skippedBefore[$row.ComputerName]) { throw "Verification wave modified skipped finding: $($row.ComputerName)" }
     }
@@ -166,6 +200,17 @@ function Invoke-InterfaceSmoke {
     Start-StatusExport $statusPath
     $script:filter.SelectedItem = 'Unfinished'
     Wait-StatusExport
+    $workbookPath = Join-Path $script:testFolder 'Status.xlsx'
+    Start-StatusExport $workbookPath; Wait-StatusExport
+    $archive = [IO.Compression.ZipFile]::OpenRead($workbookPath)
+    try {
+        $entry = $archive.GetEntry('xl/worksheets/sheet1.xml')
+        $reader = [IO.StreamReader]::new($entry.Open())
+        try { [xml]$sheet = $reader.ReadToEnd() } finally { $reader.Dispose() }
+        if (@($sheet.worksheet.sheetData.row).Count -ne 5) { throw 'Excel export must include PASS rows even while Unfinished is selected.' }
+    }
+    finally { $archive.Dispose() }
+    Write-Output 'PASS: Excel status export includes the full campaign irrespective of the view filter'
     $statusRows = @(Import-Csv -LiteralPath $statusPath)
     if ($statusRows.Count -ne 4 -or ($statusRows.Computer -join '|') -ne ($expectedNames -join '|')) { throw 'Export must capture the selected filter and sort order at click time.' }
     if (($statusRows[0].PSObject.Properties.Name -join '|') -ne 'Computer|Status|Reason / current step|Updates|Reboot|Last checked (UTC)') { throw 'Status export must contain only displayed table columns.' }
@@ -234,8 +279,27 @@ function Invoke-InterfaceSmoke {
     if ($script:app.Running -or $script:app.Rows.Count -or $script:app.Finished.Count -ne 12) { throw 'Completed campaign restarted server assessments.' }
     Write-Output 'PASS: completed campaign starts no workers'
     Reset-AppCampaign
+    if ($script:inputPath.Box.Text -or $script:finishedPath.Box.Text -or $script:unfinishedPath.Box.Text) { throw 'New campaign must clear the previous inventory and generated paths.' }
     if ([IO.File]::Exists($script:app.SessionPath) -or -not $script:inputPath.Box.Enabled) { throw 'New list did not clear local settings and unlock setup.' }
     if (-not [IO.File]::Exists($script:app.UnfinishedPath)) { throw 'New list deleted a report.' }
+
+    # Stop during the scan window must preserve the completed first pass and its
+    # requests. It must not silently perform the verification follow-up later.
+    $script:inputPath.Box.Text = Join-Path $testRoot 'Computers.example.csv'
+    $script:finishedPath.Box.Text = Join-Path $script:testFolder 'Wait-Finished.csv'
+    $script:unfinishedPath.Box.Text = Join-Path $script:testFolder 'Wait-Unfinished.csv'
+    $script:app.InitialVerificationDelaySeconds = 60
+    Start-AppWave
+    $deadline = [datetime]::UtcNow.AddSeconds(30)
+    while ($null -eq $script:app.AutoVerifyDue -and [datetime]::UtcNow -lt $deadline) {
+        Invoke-AppTick; [Windows.Forms.Application]::DoEvents(); [Threading.Thread]::Sleep(25)
+    }
+    if ($null -eq $script:app.AutoVerifyDue) { throw 'Cancellation test did not reach the scan window.' }
+    Invoke-AppCommand 'Stop'; Wait-DemoWave
+    if ($null -ne $script:app.AutoVerifyDue -or $script:app.Finished.Count -or @($script:app.Rows | Where-Object Status -eq 'VERIFICATION PENDING').Count -ne 4) { throw 'Stopping the scan window must cancel verification and retain the first-pass pending rows.' }
+    Write-Output 'PASS: stop cancels automatic follow-up and preserves pending requests'
+    Reset-AppCampaign
+    $script:app.InitialVerificationDelaySeconds = 1
 
     $script:inputPath.Box.Text = Join-Path $testRoot 'Computers.example.csv'
     $script:finishedPath.Box.Text = Join-Path $script:testFolder 'Finished-stop.csv'
@@ -251,6 +315,9 @@ function Invoke-InterfaceSmoke {
     if ($script:app.Done -ne 2 -or @($script:app.Rows | Where-Object Status -eq 'QUEUED').Count -ne 10) { throw 'Graceful stop did not retain queued computers.' }
     Write-Output 'PASS: graceful stop finishes active workers and preserves queued rows'
     Reset-AppCampaign
+    $script:inputPath.Box.Text = Join-Path $testRoot 'Computers.example.csv'
+    $script:finishedPath.Box.Text = Join-Path $script:testFolder 'Finished-staged.csv'
+    $script:unfinishedPath.Box.Text = Join-Path $script:testFolder 'Unfinished-staged.csv'
     Start-AppWave; Invoke-AppTick
     $script:app.Stopping = $true
     Wait-DemoWave

@@ -32,7 +32,7 @@ function Initialize-AppMenus {
     [void](New-AppMenuItem $file '&New campaign...' 'New' 'Control,N')
     [void](New-AppMenuItem $file '&Resume campaign...' 'Resume' 'Control,O')
     [void]$file.DropDownItems.Add([Windows.Forms.ToolStripSeparator]::new())
-    [void](New-AppMenuItem $file '&Export current view...' 'Export' 'Control,E')
+    [void](New-AppMenuItem $file '&Export Report...' 'Export' 'Control,E')
     $folders = [Windows.Forms.ToolStripMenuItem]::new('Open reports folder')
     [void]$file.DropDownItems.Add($folders)
     [void](New-AppMenuItem $folders 'Finished report folder' 'FolderFinished')
@@ -118,7 +118,9 @@ function Update-AppCommandState {
 
 function Show-StatusExportDialog {
     $dialog = [Windows.Forms.SaveFileDialog]::new()
-    $dialog.Filter = 'CSV files (*.csv)|*.csv'; $dialog.DefaultExt = 'csv'; $dialog.FileName = 'Computer-Status.csv'
+    $dialog.Filter = 'Excel workbook - all statuses (*.xlsx)|*.xlsx|CSV - current view (*.csv)|*.csv'
+    $dialog.DefaultExt = 'xlsx'; $dialog.FileName = 'Computer-Status'
+    if ([IO.Directory]::Exists($script:campaignFolder.Box.Text)) { $dialog.InitialDirectory = $script:campaignFolder.Box.Text }
     try { if ($dialog.ShowDialog($script:form) -eq 'OK') { Start-StatusExport $dialog.FileName } }
     finally { $dialog.Dispose() }
 }
@@ -181,7 +183,7 @@ function Invoke-AppCommand {
             'New' { Reset-AppCampaign }
             'Resume' {
                 $dialog = [Windows.Forms.OpenFileDialog]::new()
-                $dialog.Filter = 'Campaign session (*.json)|*.json'; $dialog.FileName = 'Validation-Session.json'
+                $dialog.Filter = 'Campaign resume file (*.json)|*.json'; $dialog.FileName = 'Campaign.json'
                 try { if ($dialog.ShowDialog($script:form) -eq 'OK') { Restore-AppSession -Path $dialog.FileName -Persist } } finally { $dialog.Dispose() }
             }
             'Export' { Show-StatusExportDialog }
@@ -211,9 +213,10 @@ function Invoke-AppCommand {
 # Tooltips describe operator decisions, not implementation internals or secrets.
 function Initialize-AppToolTips {
     foreach ($entry in @(
-        @($script:inputPath,'Original inventory. It is used once; follow-up waves use saved campaign state.'),
-        @($script:finishedPath,'Accumulated PASS results. These computers are excluded from follow-up waves.'),
-        @($script:unfinishedPath,'Latest unfinished results and verification tracking. Preserve this file between waves.')
+        @($script:inputPath,'ComputerName or SERVERNAME CSV. This is the only file you need to supply for a new campaign.'),
+        @($script:campaignFolder,'Type or browse to the exact folder for this campaign. Finished.csv, Unfinished.csv, and Campaign.json are created there on startup. Locked once the campaign begins.'),
+        @($script:finishedPath,'Created automatically in the selected campaign folder. Accumulates PASS results; optional location override before starting.'),
+        @($script:unfinishedPath,'Created automatically with the finished report and Campaign.json. Latest findings and scan tracking; preserve the campaign folder.')
     )) {
         $path = $entry[0]; $text = $entry[1]
         $script:toolTips.SetToolTip($path.Label,$text); $script:toolTips.SetToolTip($path.Box,$text)
@@ -224,11 +227,11 @@ function Initialize-AppToolTips {
         @($script:accountLabel,'Account for subsequent remote checks. Passwords are never displayed or saved.'),
         @($script:concurrency,'Maximum simultaneous computer checks, from 1 to 32. More workers can increase endpoint and network load.'),
         @($script:loadButton,'Preview a new inventory, or reset setup for another campaign. Existing reports are preserved.'),
-        @($script:startButton,'Initially assesses the input list. Thereafter checks only VERIFICATION PENDING computers.'),
+        @($script:startButton,'Initial assessment includes one automatic verification follow-up after 60 seconds. Later clicks check only VERIFICATION PENDING computers.'),
         @($script:reassessButton,'Reassess every unfinished computer after investigation or remediation. PASS computers stay finished.'),
         @($script:stopButton,'Stop dispatching work. Active checks and the final report checkpoint finish before the wave stops.'),
         @($script:setupToggle,'Collapse or expand setup. Check actions remain visible in their own pane.'),
-        @($script:exportButton,'Export a snapshot of this filtered, searched, and sorted table. Detailed tracking fields are excluded.'),
+        @($script:exportButton,'Excel exports all campaign rows on status tabs. CSV exports the current filtered, searched, sorted table. Neither includes detailed tracking.'),
         @($script:filter,'Choose which computer statuses are displayed. This does not change wave selection.'),
         @($script:search,'Filter displayed computers by name. Search is combined with the chosen status filter.'),
         @($script:progress,'Overall progress for the computers selected in this wave. Completion does not mean all computers passed.'),

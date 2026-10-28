@@ -1,10 +1,11 @@
-# Server Update Validation 0.9.0-beta.1
+# Server Update Validation 0.9.0-beta.3
 
 Windows desktop tool for post-monthly-reboot assessment using SCCM client data. Computers
 are assumed to have SCCM installed, to have recently rebooted, and to respond to ping.
-The first wave assesses the input list. Follow-up actions separately check pending
-verification or reassess unfinished computers after remediation. There is no
-automatic recovery wait, repeating wave, or retry loop.
+The initial assessment checks the input list, waits 60 seconds for SCCM scan work,
+then automatically checks only pending verification once. Later actions separately
+check pending verification or reassess unfinished computers after remediation.
+There is no continuous retry loop, installation, or automatic reboot.
 
 The operational scope is **Software Center-visible Windows OS and .NET patches,
 with strict patching/OS reboot detection that ignores PFRO entirely**, followed by
@@ -13,14 +14,14 @@ complete Windows update inventory or an application-health assessment.
 
 Download the packaged ZIP and matching checksum from this repository's **Releases**
 page, or clone the repository and keep the source files together. The current
-version is **0.9.0-beta.1**. This is beta software; earlier 1.0.x tags were test-build
+version is **0.9.0-beta.3**. This is beta software; earlier 1.0.x tags were test-build
 labels, not a general-availability declaration. Future builds remain below 1.0 until
 the owner explicitly authorizes that transition. The owner has reported successful
 live testing of earlier builds; compatibility
 with other SCCM client versions and environments still requires validation.
 
-Use the [current beta prerelease](https://github.com/Smells-Like-Coffee/Invoke-ServerUpdateValidate/releases/tag/v0.9.0-beta.1)
-for this revision. The older 1.0.x downloads are retained as historical test artifacts.
+Use the ZIP matching the version in the application title. Older downloads are
+historical test artifacts.
 
 ## Start here
 
@@ -29,8 +30,11 @@ for this revision. The older 1.0.x downloads are retained as historical test art
 2. Optionally double-click **Demo.cmd** first. It uses synthetic results only, creates
    Demo-Finished.csv and Demo-Unfinished.csv, and needs no credentials or network access.
 3. Double-click **Launch.cmd** for real assessments.
-4. Select a CSV containing a **ComputerName** header. Set both output CSV paths,
-   supply credentials, choose concurrency, and click **Start wave**.
+4. Select a CSV containing a **ComputerName** or **SERVERNAME** header, supply
+   credentials, choose concurrency and your **Campaign folder**, then click
+   **Start wave**. Report filenames are generated inside that folder. The initial run includes one verification follow-up
+   after a 60-second scan window. Only VERIFICATION PENDING computers are checked
+   again; pending scans that have not completed remain pending.
 5. Click **Check pending verification** to follow up only VERIFICATION PENDING
    computers. ACTION REQUIRED, NOT READY, UNABLE TO DETERMINE, and queued computers
    retain their existing results, timestamps, and tracking without being reassessed.
@@ -45,11 +49,43 @@ for this revision. The older 1.0.x downloads are retained as historical test art
 
 The original input field stays visible and locks with the output paths after the
 first wave starts. **New list** unlocks setup and clears saved session settings,
-without deleting reports. Choose new output filenames for a separate maintenance
-campaign; existing finished outputs accumulate as before. To continue an older
+without deleting reports. Selecting the next input generates a fresh campaign
+folder, keeping monthly runs separate. To continue an older
 campaign that has no session settings, select its unfinished CSV as the initial
 input and its existing report paths once. Input and unfinished output may be the
 same file; finished must be a separate file.
+
+## Campaign files: what the operator supplies
+
+For a new campaign, supply the computer-name CSV and select the **Campaign folder**
+by typing its path or clicking Browse. This is the exact folder where Finished.csv,
+Unfinished.csv, and Campaign.json will be placed; no extra subfolder is appended.
+The application proposes a unique destination under Documents as a starting point,
+which you can replace. A nonexistent folder is created when the assessment starts.
+The folder stays locked for the campaign, survives reopening, and is the default
+destination in Export Report. You may choose a different location for an export.
+
+Choose a separate campaign folder for each monthly run. If it already contains
+campaign files, use **File > Resume campaign** to continue them, or select another
+folder. The application will not silently mix a new campaign with those files.
+Individual report paths remain available before starting for compatibility with
+existing installations that stored their reports in separate folders.
+
+The application creates **Finished.csv** (confirmed PASS results), **Unfinished.csv**
+(all remaining findings and scan evidence), and **Campaign.json** (resume settings).
+These are application working files, not files you need to prepare. Keep them
+together and retain their tracking columns. Paths inside Campaign.json are absolute;
+moving the folder requires updating those paths before resuming.
+
+Reopening the same application folder restores the most recent campaign without
+starting work. Use **File > Resume campaign** and select a campaign's Campaign.json
+to reopen an older campaign. Credentials must be reentered. **New campaign/New list**
+clears the current selection and creates a fresh destination for the next input;
+previous campaign folders are preserved. Do not select an unfinished report to
+start a new monthly campaign; use the original names-only inventory.
+
+**Export Report** creates a separate review copy. It is optional and never replaces
+the working CSVs or their verification evidence.
 
 Starting another wave updates the selected CSVs automatically, without an existing-report
 confirmation prompt. Finished PASS results accumulate and unfinished output contains
@@ -129,7 +165,8 @@ Windows version and desktop theme. UI.Theme.ps1 must remain with the other scrip
   the unfinished report and preserve scan evidence. Skipped findings stay in the
   table and tracking CSV with their prior assessment time. PASS is never rechecked
   implicitly. Progress counts only the computers selected for the current wave.
-- Validation-Session.json stores campaign paths and concurrency beside the scripts
+- Campaign.json stores resume settings beside the reports. Validation-Session.json
+  stores the most recent campaign paths and concurrency beside the scripts
   using atomic replacement, with a .bak snapshot. It contains no credentials.
   Demo mode uses separate Demo-Session.json settings. Keep the script folder writable.
   The CSVs are the authoritative computer state; keep all tracking columns intact.
@@ -153,7 +190,11 @@ Windows version and desktop theme. UI.Theme.ps1 must remain with the other scrip
 - Hover over fields, buttons, status totals, or worker labels for contextual help.
   Setup-collapse and worker-bar preferences are saved with campaign settings. Changes
   made during a wave are saved after it completes; old session files remain readable.
-- **Export CSV** opens a Save dialog and exports a snapshot of the filtered and
+- **Export Report** offers an Excel workbook (.xlsx) or CSV (.csv). Excel includes
+  every campaign computer, regardless of the active filter/search, on separate PASS,
+  VERIFICATION PENDING, ACTION REQUIRED, NOT READY, UNABLE TO DETERMINE, QUEUED, and
+  CHECKING tabs. Empty categories retain their header row. Headers are frozen and
+  filterable; Excel does not need to be installed. CSV exports the filtered and
   searched table, in its current sort order. It contains exactly Computer, Status,
   Reason / current step, Updates, Reboot, and Last checked (UTC). Full reason text
   is retained even when the displayed cell is truncated. The details pane and
@@ -171,7 +212,7 @@ Windows version and desktop theme. UI.Theme.ps1 must remain with the other scrip
 
 | Menu | Commands |
 |---|---|
-| File | New campaign (Ctrl+N), Resume campaign (Ctrl+O), Export current view (Ctrl+E), Open reports folder, Exit (Alt+F4). |
+| File | New campaign (Ctrl+N), Resume campaign (Ctrl+O), Export Report (Ctrl+E), Open reports folder, Exit (Alt+F4). |
 | Actions | Run initial assessment, Check pending verification, Reassess unfinished, Stop after active checks, Set credentials. |
 | View | Status filter with active checkmark, Find computer (Ctrl+F), Clear search, Show details pane, Reset view. |
 | Help | User guide (F1), Troubleshooting, Release notes, GitHub repository, About. |
@@ -334,12 +375,12 @@ that a timer, a zero trigger return code, or empty query output proves completio
 
 - **Finished CSV accumulates PASS computers** across waves, one per DNS name. A
   later adverse/current observation replaces any earlier PASS for that same name.
-  Use new filenames for a new maintenance campaign. Previously passed computers
+  New campaigns receive unique report folders. Previously passed computers
   not present in the current input are retained with their original timestamps.
 - **Unfinished CSV contains everything else**, including queued rows after stopping.
   Reuse it without deleting tracking columns. Sorting/filtering the GUI does not
-  change which computers are assessed or saved to tracking reports. Export CSV
-  follows the current GUI filter/search/sort instead.
+  change which computers are assessed or saved to tracking reports. CSV display
+  export follows the GUI filter/search/sort; Excel includes all campaign rows.
 - Existing outputs receive a `.bak` snapshot. Assessment results are checkpointed
   in background batches through temporary files and atomic replacement per file.
   The visible table can briefly be ahead of the tracking CSVs while a save is busy;
@@ -409,8 +450,10 @@ compatibility need a small pilot before operational reliance.
 powershell.exe -NoProfile -STA -File .\Start-ServerUpdateValidation.ps1 -TimeoutSeconds 240 -MinimumUptimeSeconds 120
 ```
 
-There is no automatic retry/recovery wait within a wave. The operator starts subsequent
-waves. Demo data is clearly marked and rejected by live workers; start real work from
+The initial assessment includes one automatic verification follow-up after 60 seconds;
+Stop cancels this follow-up while retaining the first pass. It does not resubmit an
+existing scan request or guarantee PASS. Further waves are operator-initiated.
+Demo data is clearly marked and rejected by live workers; start real work from
 a names-only inventory and separate report filenames.
 
 ## Offline checks

@@ -93,11 +93,20 @@ function Read-ValidationInput {
         if ($header -like '*"ComputerName"*' -and $header -like '*"TrackingJson"*') { return }
         throw 'Empty tracking report has an invalid header.'
     }
-    if (-not $items.Count -or $items[0].PSObject.Properties.Name -notcontains 'ComputerName') {
-        throw 'Use a nonempty comma-delimited CSV with a ComputerName header.'
+    if (-not $items.Count) { throw 'Use a nonempty comma-delimited CSV with a ComputerName or SERVERNAME header.' }
+    $nameColumns = @($items[0].PSObject.Properties.Name | Where-Object { $_.Trim() -in @('ComputerName','ServerName') })
+    if ($nameColumns.Count -ne 1) {
+        throw 'Use exactly one ComputerName or SERVERNAME column header.'
     }
     $seen = @{}
     foreach ($item in $items) {
+        $name = ([string]$item.($nameColumns[0])).Trim()
+        # Ignore blank rows and accidentally repeated header rows. Import-Csv
+        # already consumes the real header; neither header spelling is a target.
+        if (-not $name -or $name -in @('ComputerName','ServerName')) { continue }
+        if ($nameColumns[0] -cne 'ComputerName') {
+            $item | Add-Member -NotePropertyName ComputerName -NotePropertyValue $name -Force
+        }
         $row = ConvertTo-ValidationRow $item
         $ip = $null
         if ($row.ComputerName.Length -gt 253 -or
@@ -286,6 +295,81 @@ function Save-StatusCsv {
         else { [IO.File]::Move($temp,$Path) }
     }
     finally { if ([IO.File]::Exists($temp)) { [IO.File]::Delete($temp) } }
+}
+
+# Write a standards-based .xlsx package using built-in .NET only. Every value is
+# an inline string, so server-provided text cannot become a formula, hyperlink,
+# macro, or external connection. No Excel installation or COM automation is used.
+function Save-StatusWorkbook {
+    param([string]$Path, [string[]]$Columns, [object[]]$Rows)
+    if ($Columns.Count -lt 1 -or $Columns.Count -gt 26 -or $Columns -notcontains 'Status') { throw 'The workbook requires the status table columns (maximum 26).' }
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+    $temp = Join-Path ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Path))) ([IO.Path]::GetRandomFileName())
+    $archive = $null
+    # XmlWriter escapes markup and validates characters before an export replaces
+    # an existing report. Reject oversized cells instead of silently losing text.
+    function Add-WorkbookPart {
+        param($Archive,[string]$Name,[string]$Content)
+        $entry = $Archive.CreateEntry($Name)
+        $writer = [IO.StreamWriter]::new($entry.Open(),[Text.UTF8Encoding]::new($false))
+        try { $writer.Write($Content) } finally { $writer.Dispose() }
+    }
+    function ConvertTo-WorkbookText {
+        param([string]$Value)
+        if ($Value.Length -gt 32767) { throw 'An Excel cell exceeds 32767 characters. Use CSV export for this result.' }
+        [void][Xml.XmlConvert]::VerifyXmlChars($Value)
+        # Preserve literal OpenXML escape sequences rather than decoding them
+        # into control characters when Excel reads the workbook.
+        [Security.SecurityElement]::Escape(($Value -replace '_(?=x[0-9A-Fa-f]{4}_)','_x005F_'))
+    }
+    try {
+        $archive = [IO.Compression.ZipFile]::Open($temp,[IO.Compression.ZipArchiveMode]::Create)
+        $ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+        $rel = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+        $packageRel = 'http://schemas.openxmlformats.org/package/2006/relationships'
+        $statuses = @('PASS','VERIFICATION PENDING','ACTION REQUIRED','NOT READY','UNABLE TO DETERMINE','QUEUED','CHECKING')
+        if (@($Rows | Where-Object { $_.Status -notin $statuses }).Count) { throw 'The report contains an unsupported status.' }
+        $sheets = [Text.StringBuilder]::new(); $links = [Text.StringBuilder]::new(); $types = [Text.StringBuilder]::new()
+        for ($index = 0; $index -lt $statuses.Count; $index++) {
+            $id = $index + 1; $status = $statuses[$index]
+            [void]$sheets.Append('<sheet name="' + $status + '" sheetId="' + $id + '" r:id="rId' + $id + '"/>')
+            [void]$links.Append('<Relationship Id="rId' + $id + '" Type="' + $rel + '/worksheet" Target="worksheets/sheet' + $id + '.xml"/>')
+            [void]$types.Append('<Override PartName="/xl/worksheets/sheet' + $id + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>')
+            $group = @($Rows | Where-Object Status -eq $status)
+            if ($group.Count -gt 1048575) { throw 'A status category exceeds the Excel worksheet row limit.' }
+            $xml = [Text.StringBuilder]::new()
+            [void]$xml.Append('<worksheet xmlns="' + $ns + '"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>')
+            for ($col = 0; $col -lt $Columns.Count; $col++) {
+                $width = if ($Columns[$col] -like 'Reason*') { 80 } elseif ($Columns[$col] -in @('Updates','Reboot','Missing')) { 12 } else { 28 }
+                [void]$xml.Append('<col min="' + ($col + 1) + '" max="' + ($col + 1) + '" width="' + $width + '" customWidth="1"/>')
+            }
+            [void]$xml.Append('</cols><sheetData>')
+            for ($rowIndex = 0; $rowIndex -le $group.Count; $rowIndex++) {
+                [void]$xml.Append('<row r="' + ($rowIndex + 1) + '">')
+                for ($col = 0; $col -lt $Columns.Count; $col++) {
+                    $value = if ($rowIndex -eq 0) { $Columns[$col] } else { [string]$group[$rowIndex - 1].($Columns[$col]) }
+                    $cell = ([char](65 + $col)).ToString() + ($rowIndex + 1)
+                    $style = if ($rowIndex -eq 0) { '1' } else { '0' }
+                    [void]$xml.Append('<c r="' + $cell + '" t="inlineStr" s="' + $style + '"><is><t xml:space="preserve">' + (ConvertTo-WorkbookText $value) + '</t></is></c>')
+                }
+                [void]$xml.Append('</row>')
+            }
+            [void]$xml.Append('</sheetData><autoFilter ref="A1:' + ([char](64 + $Columns.Count)) + ($group.Count + 1) + '"/></worksheet>')
+            Add-WorkbookPart $archive ('xl/worksheets/sheet' + $id + '.xml') $xml.ToString()
+        }
+        Add-WorkbookPart $archive 'xl/workbook.xml' ('<workbook xmlns="' + $ns + '" xmlns:r="' + $rel + '"><sheets>' + $sheets + '</sheets></workbook>')
+        Add-WorkbookPart $archive 'xl/_rels/workbook.xml.rels' ('<Relationships xmlns="' + $packageRel + '">' + $links + '<Relationship Id="styles" Type="' + $rel + '/styles" Target="styles.xml"/></Relationships>')
+        Add-WorkbookPart $archive '_rels/.rels' ('<Relationships xmlns="' + $packageRel + '"><Relationship Id="workbook" Type="' + $rel + '/officeDocument" Target="xl/workbook.xml"/></Relationships>')
+        Add-WorkbookPart $archive 'xl/styles.xml' ('<styleSheet xmlns="' + $ns + '"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF12345A"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')
+        Add-WorkbookPart $archive '[Content_Types].xml' ('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' + $types + '</Types>')
+        $archive.Dispose(); $archive = $null
+        if ([IO.File]::Exists($Path)) { [IO.File]::Replace($temp,$Path,($Path + '.bak'),$true) }
+        else { [IO.File]::Move($temp,$Path) }
+    }
+    finally {
+        if ($archive) { $archive.Dispose() }
+        if ([IO.File]::Exists($temp)) { [IO.File]::Delete($temp) }
+    }
 }
 
 # Save each CSV through a same-directory temporary file. File.Replace preserves

@@ -1,4 +1,40 @@
-# Build 0.9.0-beta.1 - 2026-10-27
+# Build 0.9.0-beta.3 - 2026-10-28
+
+## Changes from 0.9.0-beta.2
+
+- Added a Campaign folder input with FolderBrowserDialog. A pre-start folder
+  change updates both report filenames without touching disk; first startup creates
+  the selected folder. The resume file is placed alongside the unfinished report.
+- Folder selection is restored from saved report paths without changing legacy
+  split-output campaigns. It locks with other campaign paths after starting.
+- Export Report defaults to the selected folder, while retaining explicit Save As.
+- New campaigns refuse an occupied campaign destination before writing or dispatch.
+- Synthetic GUI regression coverage includes custom folder paths with spaces,
+  creation timing, resume-file placement, path restoration, locking, and collision
+  rejection. No endpoint query logic or credential handling changed.
+
+## Changes from 0.9.0-beta.1
+
+- Removed the banner; retained the application name/version in the native title bar.
+- Added Export Report with six-column CSV view export and full-campaign Excel
+  export, with seven status tabs. XLSX uses inline text and built-in .NET ZIP/XML;
+  no Excel/COM dependency, formulas, macros, or external links are generated.
+- Generated unique campaign destinations under Documents when the inventory loads;
+  create working CSVs and Campaign.json on first start. Keep session version 1 and
+  schema 4 compatibility, optional path overrides, and local last-campaign restore.
+- Added a single timer-driven verification follow-up 60 seconds after a successful
+  initial pass is checkpointed. No blocking sleep, recurring retry, or automatic
+  scan resubmission. Stop cancels the wait, preserving checkpointed state.
+- Accepted ComputerName/SERVERNAME CSV headers and skipped repeated/blank headers.
+
+Validation for beta.2: 97 core assertions and 92 mocked remote assertions passed
+under Windows PowerShell 5.1. The actual GUI harness passed inventory-only defaults,
+automatic verification, portable resume-file creation, cancellation during the scan
+window, status-tab export independent of filtering, and existing responsiveness,
+checkpoint, remediation and recovery scenarios. All eight scripts parsed. Workbook
+package XML and tab contents were inspected; opening it in desktop Excel and live
+SCCM testing are not yet validated for this revision.
+
 
 ## Changes from test build 1.0.8
 

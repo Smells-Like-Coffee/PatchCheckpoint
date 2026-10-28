@@ -144,6 +144,10 @@ try {
     [IO.File]::WriteAllText($inputPath,"ComputerName`r`nSERVER01`r`nSERVER02`r`n")
     $rows = @(Read-ValidationInput $inputPath)
     Assert-Equal $rows.Count 2 'Names-only input accepted'
+    $headerPath = Join-Path $folder 'headers.csv'
+    [IO.File]::WriteAllText($headerPath,"SERVERNAME`r`nSERVER01`r`nSERVERNAME`r`nComputerName`r`n`r`nSERVER02`r`n")
+    $headerRows = @(Read-ValidationInput $headerPath)
+    Assert-Equal ($headerRows.ComputerName -join '|') 'SERVER01|SERVER02' 'SERVERNAME header, repeated headers and blank rows never become targets'
     $rows[0].Status = 'PASS'; $rows[1].Status = 'VERIFICATION PENDING'; $rows[1].ScanRequestedAtUtc = $r.ScanRequestedAtUtc; $rows[1].ScanBaselineJson = $r.ScanBaselineJson
     $finished = @{}
     Save-WaveReports $rows $finished $finishedPath $unfinishedPath
@@ -191,6 +195,24 @@ try {
     Save-StatusCsv $statusPath $columns @()
     Assert-Equal @(Import-Csv -LiteralPath $statusPath).Count 0 'Empty status view exports a header-only CSV'
     Assert-Equal ([IO.File]::Exists($statusPath + '.bak')) $true 'Replacing an export retains the previous snapshot'
+    $workbookPath = Join-Path $folder 'status.xlsx'
+    Save-StatusWorkbook $workbookPath $columns $displayRows
+    $archive = [IO.Compression.ZipFile]::OpenRead($workbookPath)
+    try {
+        foreach ($entry in $archive.Entries) {
+            $reader = [IO.StreamReader]::new($entry.Open())
+            try { [xml]$document = $reader.ReadToEnd() } finally { $reader.Dispose() }
+            if ($entry.FullName -eq 'xl/workbook.xml') { Assert-Equal @($document.workbook.sheets.sheet).Count 7 'Excel workbook contains a tab for every status category' }
+            if ($entry.FullName -eq 'xl/worksheets/sheet3.xml') {
+                Assert-Equal @($document.worksheet.sheetData.row).Count 2 'Outstanding result is on its status tab'
+                Assert-Equal ([string]$document.worksheet.sheetData.row[1].c[2].is.t.InnerText) '=formula, with comma' 'Excel stores formula-like values as literal inline text'
+            }
+            Assert-Equal @($document.SelectNodes('//*[local-name()="f"]')).Count 0 'Workbook contains no formulas'
+        }
+    }
+    finally { $archive.Dispose() }
+    Save-StatusWorkbook $workbookPath $columns @()
+    Assert-Equal ([IO.File]::Exists($workbookPath + '.bak')) $true 'Empty Excel export remains valid and preserves its predecessor'
     $lock = [IO.File]::Open(($unfinishedPath + '.lock'),'OpenOrCreate','ReadWrite','None')
     try {
         $rejected = $false

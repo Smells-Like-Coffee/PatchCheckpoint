@@ -165,14 +165,11 @@ function Set-ValidationTheme {
     $script:form.BackColor = [Drawing.Color]::FromArgb(239,244,249)
     $script:form.ForeColor = [Drawing.Color]::FromArgb(17,40,75)
     $script:form.Font = [Drawing.Font]::new('Segoe UI',10)
-    $title.ForeColor = [Drawing.Color]::FromArgb(10,34,69)
-    $title.Font = [Drawing.Font]::new('Segoe UI',22,[Drawing.FontStyle]::Bold)
-    $title.SetBounds(24,40,1000,44)
     $script:setupCard = [ValidationUI.Card]::new(); $script:form.Controls.Add($script:setupCard)
     $script:checksCard = [ValidationUI.Card]::new(); $script:form.Controls.Add($script:checksCard)
     $script:progressCard = [ValidationUI.Card]::new(); $script:form.Controls.Add($script:progressCard)
     $script:resultsCard = [ValidationUI.Card]::new(); $script:form.Controls.Add($script:resultsCard)
-    [void](New-ThemeHeading $script:setupCard 'Wave setup')
+    [void](New-ThemeHeading $script:setupCard 'Campaign setup')
     [void](New-ThemeHeading $script:checksCard 'Checks')
     $script:scopeCaption = [Windows.Forms.Label]::new(); $script:scopeCaption.Text = 'OS + .NET patches | PFRO ignored'
     $script:scopeCaption.AutoEllipsis = $true; $script:scopeCaption.Font = [Drawing.Font]::new('Segoe UI',9)
@@ -187,7 +184,7 @@ function Set-ValidationTheme {
     $computerLabel.Parent = $script:resultsCard; $computerLabel.SetBounds(20,14,250,28)
     $computerLabel.Font = [Drawing.Font]::new('Segoe UI',13,[Drawing.FontStyle]::Bold)
     $computerLabel.BackColor = [Drawing.Color]::Transparent
-    foreach ($path in @($script:inputPath,$script:finishedPath,$script:unfinishedPath)) {
+    foreach ($path in @($script:inputPath,$script:campaignFolder,$script:finishedPath,$script:unfinishedPath)) {
         foreach ($c in @($path.Label,$path.Box,$path.Button)) { $c.Parent = $script:setupCard; $c.Anchor = 'Top,Left' }
         $path.Label.BackColor = [Drawing.Color]::Transparent
         $path.Box.BorderStyle = 'FixedSingle'; $path.Box.BackColor = [Drawing.Color]::FromArgb(253,254,255)
@@ -289,12 +286,12 @@ function Set-ValidationTheme {
 
 function Set-ValidationThemeLayout {
     $w = $script:form.ClientSize.Width; $h = $script:form.ClientSize.Height; $cw = $w - 36
-    $setupHeight = if ($script:app.SetupCollapsed) { 44 } else { 202 }
-    $script:setupCard.SetBounds(18,92,$cw,$setupHeight)
+    $setupHeight = if ($script:app.SetupCollapsed) { 44 } else { 238 }
+    $script:setupCard.SetBounds(18,34,$cw,$setupHeight)
     $script:setupToggle.SetBounds(($cw - 142),7,122,29)
     $script:setupToggle.Text = if ($script:app.SetupCollapsed) { 'Expand setup' } else { 'Collapse setup' }
     $index = 0
-    foreach ($path in @($script:inputPath,$script:finishedPath,$script:unfinishedPath)) {
+    foreach ($path in @($script:inputPath,$script:campaignFolder,$script:finishedPath,$script:unfinishedPath)) {
         $y = 45 + (36 * $index)
         $path.Label.SetBounds(20,($y + 4),182,25)
         $path.Box.SetBounds(205,$y,($cw - 330),28)
@@ -303,11 +300,11 @@ function Set-ValidationThemeLayout {
         $index++
     }
     foreach ($control in @($script:themeConcurrentLabel,$script:concurrency,$script:accountLabel,$script:credentialButton)) { $control.Visible = -not $script:app.SetupCollapsed }
-    $script:themeConcurrentLabel.SetBounds(($cw - 315),161,175,26)
-    $script:concurrency.SetBounds(($cw - 112),157,80,29)
-    $script:accountLabel.SetBounds(20,162,390,28)
-    $script:credentialButton.SetBounds(424,154,155,35)
-    $checksY = 92 + $setupHeight + 12
+    $script:themeConcurrentLabel.SetBounds(($cw - 315),197,175,26)
+    $script:concurrency.SetBounds(($cw - 112),193,80,29)
+    $script:accountLabel.SetBounds(20,198,390,28)
+    $script:credentialButton.SetBounds(424,190,155,35)
+    $checksY = 34 + $setupHeight + 12
     $script:checksCard.SetBounds(18,$checksY,$cw,88)
     $script:loadButton.SetBounds(20,42,110,34)
     $script:startButton.SetBounds(142,42,250,34)
@@ -333,7 +330,7 @@ function Set-ValidationThemeLayout {
     $resultsY = $progressY + $progressHeight + 12
     $rh = $h - $resultsY - 46
     $script:resultsCard.SetBounds(18,$resultsY,$cw,$rh)
-    $script:exportButton.SetBounds(($cw - 690),12,110,34)
+    $script:exportButton.SetBounds(($cw - 710),12,130,34)
     $script:filter.SetBounds(($cw - 560),14,220,28)
     $script:themeSearchLabel.SetBounds(($cw - 322),18,60,24)
     $script:search.SetBounds(($cw - 260),14,240,28)

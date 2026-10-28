@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.9.0-beta.3 - 2026-10-28
+
+- Added an editable Campaign folder field and native folder picker. Selecting a
+  folder places Finished.csv, Unfinished.csv, and Campaign.json directly there.
+- Retained the folder across waves and restarts, locking it once work begins.
+  Export Report defaults to the campaign folder; existing split-path sessions remain readable.
+- Prevented new campaigns from silently reusing a folder containing campaign files.
+- Tested folder selection, creation, restore, locking, and existing-file protection
+  through the actual synthetic GUI workflow.
+
+## 0.9.0-beta.2 - 2026-10-28
+
+- Removed the redundant content banner and reclaimed its space for results.
+- Renamed Export CSV to Export Report. Added dependency-free .xlsx export of all
+  campaign results on status-category tabs; CSV retains the selected table view.
+- New inventories receive unique campaign folders under Documents with generated
+  finished/unfinished CSV paths and Campaign.json resume settings. Existing sessions
+  remain compatible and the local last-campaign pointer still restores on startup.
+- Initial assessments automatically check pending verification once after a
+  nonblocking 60-second scan window. Stop cancels the follow-up. Existing evidence
+  requirements remain unchanged; slow scans may still need another manual wave.
+- Accepted SERVERNAME as well as ComputerName headers; skipped blank and repeated
+  header rows so column names are never assessed as targets.
+- Added regression coverage for Excel packages, input headers, automatic follow-up,
+  campaign defaults, and cancellation. Endpoint behavior still needs a live pilot.
+
 ## 0.9.0-beta.1 - 2026-10-27
 
 - Pre-1.0 beta versioning; earlier 1.0.x builds remain historical test artifacts.

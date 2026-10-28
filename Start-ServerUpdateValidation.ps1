@@ -24,7 +24,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '0.9.0-beta.1'
+$script:AppVersion = '0.9.0-beta.3'
 $script:ProjectRoot = $PSScriptRoot
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or -not [Environment]::Is64BitProcess -or
     [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
@@ -53,6 +53,8 @@ $script:app = @{
     RecoveryFailed = $false
     SetupCollapsed = $false; ShowWorkerProgress = $true; LastWorkerResults = @{}
     ViewPreferencesDirty = $false
+    AutoVerifyDue = $null; InitialVerificationDelaySeconds = 60
+    RestoringFolder = $false
 }
 
 # Workers have no GUI references. All remote invocation and waiting occurs away
@@ -160,7 +162,20 @@ function Load-AppRows {
     if ($script:app.CampaignStarted) {
         $script:app.Rows = @(Read-ValidationInput $script:app.UnfinishedPath -AllowEmpty)
     }
-    else { $script:app.Rows = @(Read-ValidationInput $script:inputPath.Box.Text) }
+    else {
+        $script:app.Rows = @(Read-ValidationInput $script:inputPath.Box.Text)
+        if (-not $script:app.Rows.Count) { throw 'The input CSV contains no computer names.' }
+        # A new campaign needs only an inventory. Unique folders keep monthly
+        # results separate, even when the same inventory filename is reused.
+        if (-not $script:finishedPath.Box.Text -or -not $script:unfinishedPath.Box.Text) {
+            $documents = [Environment]::GetFolderPath('MyDocuments')
+            $folder = if ($script:campaignFolder.Box.Text.Trim()) { [IO.Path]::GetFullPath($script:campaignFolder.Box.Text.Trim()) }
+                else { Join-Path $documents ('Server Update Validation\Campaigns\' + [IO.Path]::GetFileNameWithoutExtension($script:inputPath.Box.Text) + '-' + [datetime]::Now.ToString('yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,6)) }
+            $script:campaignFolder.Box.Text = $folder
+            $script:finishedPath.Box.Text = Join-Path $folder 'Finished.csv'
+            $script:unfinishedPath.Box.Text = Join-Path $folder 'Unfinished.csv'
+        }
+    }
     Refresh-AppTable
     if (-not $script:app.Running) {
         $script:app.WorkIndices = @(); $script:app.Next = 0; $script:app.Done = 0
@@ -168,6 +183,16 @@ function Load-AppRows {
         $script:summary.Text = "$($script:app.Rows.Count) unfinished | $($script:app.Finished.Count) finished"
     }
     $script:footer.Text = "Loaded $($script:app.Rows.Count) computers. No server actions started."
+}
+
+# A folder change before startup relocates the complete campaign as one unit.
+# Merely typing or browsing a path does not create folders or touch reports.
+function Set-AppCampaignFolder {
+    if ($script:app.CampaignStarted -or $script:app.RestoringFolder) { return }
+    $folder = $script:campaignFolder.Box.Text.Trim()
+    if (-not $folder) { $script:finishedPath.Box.Clear(); $script:unfinishedPath.Box.Clear(); return }
+    $script:finishedPath.Box.Text = Join-Path $folder 'Finished.csv'
+    $script:unfinishedPath.Box.Text = Join-Path $folder 'Unfinished.csv'
 }
 
 function Refresh-AppTable {
@@ -195,6 +220,17 @@ function Save-AppSession {
     $session = [ordered]@{ Version = 1; InputPath = $script:inputPath.Box.Text; FinishedPath = $script:app.FinishedPath; UnfinishedPath = $script:app.UnfinishedPath; Concurrency = [int]$script:concurrency.Value }
     $session.ShowWorkerProgress = $script:app.ShowWorkerProgress
     $session.SetupCollapsed = $script:app.SetupCollapsed
+    $session.CampaignFolder = [IO.Path]::GetDirectoryName($script:app.UnfinishedPath)
+    # Keep a portable resume file with the reports, plus the existing local
+    # last-campaign pointer for automatic restoration on the next application run.
+    $campaignPath = Join-Path ([IO.Path]::GetDirectoryName($script:app.UnfinishedPath)) 'Campaign.json'
+    $campaignTemp = $campaignPath + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+    try {
+        [IO.File]::WriteAllText($campaignTemp,(ConvertTo-Json -InputObject $session))
+        if ([IO.File]::Exists($campaignPath)) { [IO.File]::Replace($campaignTemp,$campaignPath,($campaignPath + '.bak'),$true) }
+        else { [IO.File]::Move($campaignTemp,$campaignPath) }
+    }
+    finally { if ([IO.File]::Exists($campaignTemp)) { [IO.File]::Delete($campaignTemp) } }
     $temp = $script:app.SessionPath + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
     try {
         [IO.File]::WriteAllText($temp,(ConvertTo-Json -InputObject $session))
@@ -215,13 +251,16 @@ function Reset-AppCampaign {
     $script:app.WorkIndices = @(); $script:app.Next = 0; $script:app.Done = 0
     $script:app.RecoveryFailed = $false
     $script:app.LastWorkerResults = @{}
+    $script:app.AutoVerifyDue = $null
+    $script:inputPath.Box.Clear(); $script:finishedPath.Box.Clear(); $script:unfinishedPath.Box.Clear()
+    $script:campaignFolder.Box.Clear()
     $script:app.Clock.Reset()
     $script:table.Clear(); $script:detail.Clear()
     $script:startButton.Text = 'Start wave'; $script:loadButton.Text = 'Load list'
     Set-SetupEnabled $true
     Update-AppProgress
     $script:summary.Text = 'Load an input CSV to begin.'
-    $script:footer.Text = 'New list: select input and report paths. Previous reports are preserved.'
+    $script:footer.Text = 'New campaign: select a computer CSV. Report and resume files are created automatically; previous campaigns are preserved.'
 }
 function Update-AppProgress {
     $running = $script:app.Workers.Count
@@ -290,19 +329,26 @@ function Start-StatusExport {
     param([string]$Path)
     if ($script:app.ExportJob) { throw 'An export is already running.' }
     $target = [IO.Path]::GetFullPath($Path)
-    if ([IO.Path]::GetExtension($target) -ne '.csv') { throw 'Choose a .csv export filename.' }
+    $excel = [IO.Path]::GetExtension($target) -eq '.xlsx'
+    if (-not $excel -and [IO.Path]::GetExtension($target) -ne '.csv') { throw 'Choose a .csv or .xlsx export filename.' }
     $protected = @($script:inputPath.Box.Text,$script:finishedPath.Box.Text,$script:unfinishedPath.Box.Text,$script:app.SessionPath)
     foreach ($reserved in $protected) {
         if (-not $reserved) { continue }
         $reservedPath = [IO.Path]::GetFullPath($reserved)
         if ($target -in @($reservedPath,($reservedPath + '.bak'),($reservedPath + '.lock')) -or ($target + '.bak') -eq $reservedPath) { throw 'Choose an export filename separate from the input, tracking reports, and session files.' }
     }
+    if ($script:app.UnfinishedPath -and $target -in @((Join-Path ([IO.Path]::GetDirectoryName($script:app.UnfinishedPath)) 'Campaign.json'),(Join-Path ([IO.Path]::GetDirectoryName($script:app.UnfinishedPath)) 'Campaign.json.bak'))) { throw 'The campaign resume file cannot be overwritten by an export.' }
     $columns = @($script:grid.Columns | Where-Object Visible | Sort-Object DisplayIndex)
     $headers = @($columns | ForEach-Object { $_.HeaderText })
     $snapshot = @(
-        foreach ($viewRow in $script:binding.List) {
+        # CSV retains the selected view. Excel includes the complete campaign,
+        # irrespective of the active Unfinished filter, and separates statuses.
+        foreach ($viewRow in $(if ($excel) { $script:table.DefaultView.Table.Select('', $script:binding.Sort) } else { $script:binding.List })) {
             $values = [ordered]@{}
-            foreach ($column in $columns) { $values[$column.HeaderText] = [string]$viewRow.Row[$column.DataPropertyName] }
+            foreach ($column in $columns) {
+                $dataRow = if ($excel) { $viewRow } else { $viewRow.Row }
+                $values[$column.HeaderText] = [string]$dataRow[$column.DataPropertyName]
+            }
             [pscustomobject]$values
         }
     )
@@ -311,7 +357,8 @@ function Start-StatusExport {
         param($Helpers,$Path,$Columns,$Rows)
         $ErrorActionPreference = 'Stop'
         . ([scriptblock]::Create($Helpers))
-        Save-StatusCsv $Path $Columns $Rows
+        if ([IO.Path]::GetExtension($Path) -eq '.xlsx') { Save-StatusWorkbook $Path $Columns $Rows }
+        else { Save-StatusCsv $Path $Columns $Rows }
     }).AddArgument($script:app.Helpers).AddArgument($target).AddArgument($headers).AddArgument($snapshot)
     try {
         $script:app.ExportJob = [pscustomobject]@{ PowerShell = $ps; Handle = $ps.BeginInvoke(); Path = $target; Count = $snapshot.Count }
@@ -336,10 +383,10 @@ function Complete-StatusExport {
 }
 function Set-SetupEnabled {
     param([bool]$Enabled)
-    foreach ($control in @($script:inputPath.Box,$script:inputPath.Button,$script:finishedPath.Box,$script:finishedPath.Button,$script:unfinishedPath.Box,$script:unfinishedPath.Button,$script:credentialButton,$script:concurrency,$script:startButton,$script:loadButton)) { $control.Enabled = $Enabled }
+    foreach ($control in @($script:inputPath.Box,$script:inputPath.Button,$script:campaignFolder.Box,$script:campaignFolder.Button,$script:finishedPath.Box,$script:finishedPath.Button,$script:unfinishedPath.Box,$script:unfinishedPath.Button,$script:credentialButton,$script:concurrency,$script:startButton,$script:loadButton)) { $control.Enabled = $Enabled }
     $script:stopButton.Enabled = -not $Enabled
     if ($script:app.CampaignStarted) {
-        foreach ($pathControl in @($script:inputPath,$script:finishedPath,$script:unfinishedPath)) { $pathControl.Box.Enabled = $false; $pathControl.Button.Enabled = $false }
+        foreach ($pathControl in @($script:inputPath,$script:campaignFolder,$script:finishedPath,$script:unfinishedPath)) { $pathControl.Box.Enabled = $false; $pathControl.Button.Enabled = $false }
         $script:startButton.Text = 'Check pending verification'; $script:loadButton.Text = 'New list'
     }
     $script:reassessButton.Enabled = $Enabled -and $script:app.CampaignStarted -and -not $script:app.FatalSave
@@ -375,9 +422,19 @@ function Start-AppWave {
     $input = [IO.Path]::GetFullPath($script:inputPath.Box.Text)
     $finished = [IO.Path]::GetFullPath($script:finishedPath.Box.Text)
     $unfinished = [IO.Path]::GetFullPath($script:unfinishedPath.Box.Text)
+    # Reusing a populated destination for a new campaign could mix monthly
+    # results. Existing campaigns must be resumed rather than silently replaced.
+    if (-not $script:app.CampaignStarted -and $script:campaignFolder.Box.Text.Trim()) {
+        $folder = [IO.Path]::GetFullPath($script:campaignFolder.Box.Text.Trim())
+        if ($finished -eq (Join-Path $folder 'Finished.csv') -and $unfinished -eq (Join-Path $folder 'Unfinished.csv')) {
+            foreach ($name in @('Finished.csv','Unfinished.csv','Campaign.json')) {
+                if ([IO.File]::Exists((Join-Path $folder $name))) { throw 'This folder already contains campaign files. Use File > Resume campaign, or choose a different campaign folder.' }
+            }
+        }
+    }
     if ($finished -eq $unfinished -or $input -eq $finished) { throw 'Finished output must differ from both input and unfinished output.' }
     foreach ($path in @($finished,$unfinished)) {
-        if (-not [IO.Directory]::Exists([IO.Path]::GetDirectoryName($path))) { throw "Output folder does not exist: $path" }
+        if (-not [IO.Directory]::Exists([IO.Path]::GetDirectoryName($path))) { [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path)) }
         if ([IO.Path]::GetExtension($path) -ne '.csv') { throw 'Both report filenames must end in .csv.' }
     }
     # Starting a wave updates the selected report files without an overwrite prompt.
@@ -426,6 +483,23 @@ function Invoke-AppTick {
         if (-not $script:app.Running) {
             if (-not $script:app.ExportJob) { $script:timer.Stop() }
             return
+        }
+        # Allow SCCM time to finish its asynchronous scan without blocking the
+        # message loop. This is one follow-up, not an automatic retry loop.
+        if ($null -ne $script:app.AutoVerifyDue) {
+            if ($script:app.Stopping) { $script:app.AutoVerifyDue = $null }
+            elseif ([datetime]::UtcNow -lt $script:app.AutoVerifyDue) {
+                $seconds = [int][math]::Ceiling(($script:app.AutoVerifyDue - [datetime]::UtcNow).TotalSeconds)
+                $script:footer.Text = "Initial assessment saved. Verification follow-up starts in $seconds seconds. Stop cancels the follow-up."
+                return
+            }
+            else {
+                $script:app.AutoVerifyDue = $null
+                $script:app.Running = $false
+                Release-AppResources
+                Start-AppWave -Mode Verification
+                return
+            }
         }
         Complete-AppCheckpoint
         $completedThisTick = 0
@@ -509,6 +583,11 @@ function Invoke-AppTick {
             $script:app.LastProgressMs = $script:app.Clock.ElapsedMilliseconds; $script:app.ProgressDirty = $false
         }
         if (($script:app.Next -eq $script:app.WorkIndices.Count -or $script:app.Stopping) -and -not $script:app.Workers.Count -and -not $script:app.PendingDispatch.Count -and -not $script:app.ReportJob -and (-not $script:app.ReportsDirty -or $script:app.FatalSave)) {
+            if ($script:app.WaveMode -eq 'Initial' -and -not $script:app.Stopping -and -not $script:app.FatalSave -and @($script:app.Rows | Where-Object Status -eq 'VERIFICATION PENDING').Count) {
+                $script:app.AutoVerifyDue = [datetime]::UtcNow.AddSeconds($script:app.InitialVerificationDelaySeconds)
+                $script:footer.Text = 'Initial assessment saved. Waiting for SCCM scan completion before the automatic verification follow-up.'
+                return
+            }
             Update-AppProgress
             if (-not $script:app.ExportJob) { $script:timer.Stop() }
             $script:app.Clock.Stop(); $script:app.Running = $false
@@ -541,8 +620,8 @@ $script:form.Text = 'Server Update Validation ' + $script:AppVersion + $(if ($De
 $script:form.ClientSize = [Drawing.Size]::new(1040,750); $script:form.MinimumSize = [Drawing.Size]::new(1056,789)
 $script:form.StartPosition = 'CenterScreen'; $script:form.Font = [Drawing.Font]::new('Segoe UI',10)
 $script:form.BackColor = [Drawing.Color]::FromArgb(247,249,252)
-$title = New-Label 'Server Update Validation' 18 12 700 35; $title.Font = [Drawing.Font]::new('Segoe UI',18,[Drawing.FontStyle]::Bold)
 $script:inputPath = New-PathInput 'Input CSV' 60
+$script:campaignFolder = New-PathInput 'Campaign folder' 98
 $script:finishedPath = New-PathInput 'Finished CSV (PASS only)' 98
 $script:unfinishedPath = New-PathInput 'Unfinished CSV / next wave' 136
 $script:credentialButton = New-Button 'Set credentials...' 18 178 150
@@ -562,7 +641,7 @@ $script:counts = New-Label '' 18 323 1000 28; $script:counts.Font = [Drawing.Fon
 [void](New-Label 'Computer status' 18 359 180)
 $script:filter = [Windows.Forms.ComboBox]::new(); $script:filter.SetBounds(200,354,240,28); $script:filter.DropDownStyle = 'DropDownList'
 [void]$script:filter.Items.AddRange(@('All','Unfinished','PASS','VERIFICATION PENDING','ACTION REQUIRED','NOT READY','UNABLE TO DETERMINE')); $script:filter.SelectedIndex = 1; $script:form.Controls.Add($script:filter)
-$script:exportButton = New-Button 'Export CSV' 18 354 110
+$script:exportButton = New-Button 'Export Report' 18 354 130
 [void](New-Label 'Search computer' 460 359 145)
 $script:search = [Windows.Forms.TextBox]::new(); $script:search.SetBounds(610,354,405,28); $script:search.Anchor = 'Top,Left,Right'; $script:form.Controls.Add($script:search)
 $script:table = [Data.DataTable]::new()
@@ -596,6 +675,17 @@ $script:inputPath.Button.Add_Click({
     $d = [Windows.Forms.OpenFileDialog]::new(); $d.Filter = 'CSV files (*.csv)|*.csv'
     try { if ($d.ShowDialog($script:form) -eq 'OK') { $script:inputPath.Box.Text = $d.FileName; Load-AppRows } }
     catch { Show-AppError $_.Exception.Message } finally { $d.Dispose() }
+})
+$script:campaignFolder.Box.Add_TextChanged({
+    try { Set-AppCampaignFolder } catch { $script:footer.Text = 'Invalid campaign folder: ' + $_.Exception.Message }
+})
+$script:campaignFolder.Button.Add_Click({
+    $dialog = [Windows.Forms.FolderBrowserDialog]::new()
+    $dialog.Description = 'Choose the folder for this campaign, its result CSVs, and its resume file.'
+    $dialog.ShowNewFolderButton = $true
+    if ([IO.Directory]::Exists($script:campaignFolder.Box.Text)) { $dialog.SelectedPath = $script:campaignFolder.Box.Text }
+    try { if ($dialog.ShowDialog($script:form) -eq 'OK') { $script:campaignFolder.Box.Text = $dialog.SelectedPath } }
+    catch { Show-AppError $_.Exception.Message } finally { $dialog.Dispose() }
 })
 $script:finishedPath.Button.Add_Click({
     $d = [Windows.Forms.SaveFileDialog]::new(); $d.Filter = 'CSV files (*.csv)|*.csv'; $d.DefaultExt = 'csv'; $d.OverwritePrompt = $false
@@ -676,6 +766,11 @@ function Restore-AppSession {
     $script:inputPath.Box.Text = $saved.InputPath
     $script:finishedPath.Box.Text = $saved.FinishedPath; $script:app.FinishedPath = $saved.FinishedPath
     $script:unfinishedPath.Box.Text = $saved.UnfinishedPath; $script:app.UnfinishedPath = $saved.UnfinishedPath
+    # Older sessions may have split output paths. Display their resume-file
+    # folder without rewriting either saved report location.
+    $script:app.RestoringFolder = $true
+    try { $script:campaignFolder.Box.Text = [IO.Path]::GetDirectoryName($saved.UnfinishedPath) }
+    finally { $script:app.RestoringFolder = $false }
     $script:concurrency.Value = $saved.Concurrency
     $script:app.Finished = $campaign.Finished; $script:app.Rows = $campaign.Rows
     $script:app.WorkIndices = @(); $script:app.Next = 0; $script:app.Done = 0; $script:app.Clock.Reset()
