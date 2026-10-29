@@ -216,7 +216,9 @@ function Get-ScanRequestAcknowledgement {
 }
 
 # Require every configured source to have a valid completion newer than its
-# recorded baseline AND the request. Both timestamps use the target's UTC clock.
+# recorded baseline AND the request. History must match the current source version;
+# a catalog refresh on the same source does not invalidate a newer completed scan.
+# Both timestamps use the target's UTC clock.
 # A request ID is not exposed by TriggerSchedule; this proves a qualifying scan
 # after our request, not exclusive ownership of the scan.
 function Test-ScanVerification {
@@ -238,7 +240,10 @@ function Test-ScanVerification {
             $old = @($baseline | Where-Object { $_.Id -eq $source.Id })
             $current = @($History | Where-Object { $_.Id -eq $source.Id })
             if ($old.Count -ne 1 -or $current.Count -ne 1) { return 'EVIDENCE UNAVAILABLE' }
-            if ([string]$old[0].Version -ne [string]$source.Version) { return 'SOURCE CHANGED' }
+            # Source identity must remain unchanged, but its catalog version may
+            # advance during the requested scan. Validate current-version evidence
+            # below rather than permanently blocking on the older baseline version.
+            if ([string]::IsNullOrWhiteSpace([string]$source.Version)) { return 'EVIDENCE UNAVAILABLE' }
             if ($current[0].Valid -ne $true -or [string]$current[0].Version -ne [string]$source.Version -or -not $current[0].CompletedUtc) {
                 return 'PENDING'
             }

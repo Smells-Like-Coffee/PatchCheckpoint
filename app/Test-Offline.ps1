@@ -56,7 +56,19 @@ $history[0].Valid = $true; $history[0].CompletedUtc = '2026-01-01T01:00:00Z'
 Assert-Equal (Test-ScanVerification $r $sources $history '2025-12-31T00:00:00Z') 'PENDING' 'Completion must be strictly after request'
 $history[0].CompletedUtc = '2026-01-01T02:00:00Z'
 $sources[0].Version = '8'
-Assert-Equal (Test-ScanVerification $r $sources $history '2025-12-31T00:00:00Z') 'SOURCE CHANGED' 'Catalog change requires fresh verification'
+Assert-Equal (Test-ScanVerification $r $sources $history '2025-12-31T00:00:00Z') 'PENDING' 'Old-version history cannot verify the current catalog'
+$history[0].Version = '8'
+Assert-Equal (Test-ScanVerification $r $sources $history '2025-12-31T00:00:00Z') 'CONFIRMED' 'Newer valid current-catalog scan verifies the original request'
+$history[0].Valid = $false
+Assert-Equal (Test-ScanVerification $r $sources $history '2025-12-31T00:00:00Z') 'PENDING' 'Catalog refresh still requires valid history'
+$history[0].Valid = $true; $history[0].CompletedUtc = $r.ScanRequestedAtUtc
+Assert-Equal (Test-ScanVerification $r $sources $history '2025-12-31T00:00:00Z') 'PENDING' 'Current-catalog completion at request boundary cannot pass'
+$history[0].CompletedUtc = '2026-01-01T02:00:00Z'
+$sources[0].Id = 'SOURCE-REPLACED'
+Assert-Equal (Test-ScanVerification $r $sources $history '2025-12-31T00:00:00Z') 'SOURCE CHANGED' 'An actual source identity change still blocks verification'
+$sources[0].Id = 'SOURCE-A'; $sources[0].Version = ''
+Assert-Equal (Test-ScanVerification $r $sources $history '2025-12-31T00:00:00Z') 'EVIDENCE UNAVAILABLE' 'Missing current catalog version cannot pass'
+$history[0].Version = '7'
 $sources[0].Version = '7'
 Assert-Equal (Test-ScanVerification $r $sources @() '2025-12-31T00:00:00Z') 'EVIDENCE UNAVAILABLE' 'Absent history cannot pass'
 $r.ScanBaselineJson = 'not JSON'
@@ -123,7 +135,7 @@ $savedHistory[0].CompletedUtc = '2026-10-27T14:18:00.0000000Z'
 Assert-Equal (Test-ScanVerification $savedRestored $savedSources $savedHistory $savedRestored.LastBootUtc) 'CONFIRMED' 'Pilot request confirms when newer valid completion appears'
 
 # Multiple update sources must survive JSON/CSV import in Windows PowerShell 5.1.
-# Matching sources may arrive in a different order; actual version changes still block.
+# Matching sources may arrive in a different order; every current version needs evidence.
 $multi = ConvertTo-ValidationRow $savedRestored
 $multiBaseline = @(
     [pscustomobject]@{ Id = 'SOURCE-A'; Version = '7'; CompletedUtc = '2026-10-27T14:16:00Z' }
@@ -136,7 +148,21 @@ $multiHistory = @($multiSources | ForEach-Object { [pscustomobject]@{ Id = $_.Id
 Assert-Equal (Test-ScanVerification $multi $multiSources $multiHistory $multi.LastBootUtc) 'CONFIRMED' 'Multiple sources confirm after JSON and CSV round trip regardless of order'
 Assert-Equal (Test-ScanVerification $multi $multiSources @($multiHistory[0]) $multi.LastBootUtc) 'EVIDENCE UNAVAILABLE' 'Every source requires completion evidence'
 $multiSources[0].Version = '10'
-Assert-Equal (Test-ScanVerification $multi $multiSources $multiHistory $multi.LastBootUtc) 'SOURCE CHANGED' 'Actual multi-source version change still blocks confirmation'
+Assert-Equal (Test-ScanVerification $multi $multiSources $multiHistory $multi.LastBootUtc) 'PENDING' 'Every source must have history matching its current catalog version'
+$multiHistory[0].Version = '10'
+Assert-Equal (Test-ScanVerification $multi $multiSources $multiHistory $multi.LastBootUtc) 'CONFIRMED' 'Multiple sources confirm when refreshed catalog evidence is complete'
+$multiBaseline[0].CompletedUtc = '2026-10-27T14:19:00Z'
+$multi.ScanBaselineJson = ConvertTo-Json -InputObject $multiBaseline -Compress
+Assert-Equal (Test-ScanVerification $multi $multiSources $multiHistory $multi.LastBootUtc) 'PENDING' 'Completion must also be newer than the saved baseline'
+
+# Reproduce the catalog refresh observed in the live campaign, without real host IDs.
+$catalogCase = New-ValidationRow 'CATALOG-REFRESH01'
+$catalogCase.ScanRequestedAtUtc = '2026-10-29T14:42:31.2440745Z'
+$catalogCase.ScanRequestBootUtc = '2026-10-25T07:23:49.3838580Z'
+$catalogCase.ScanBaselineJson = '[{"Id":"SOURCE-CATALOG","Version":"1536","CompletedUtc":"2026-10-28T15:52:37.0420000Z"}]'
+$catalogSources = @([pscustomobject]@{ Id = 'SOURCE-CATALOG'; Version = '1537' })
+$catalogHistory = @([pscustomobject]@{ Id = 'SOURCE-CATALOG'; Version = '1537'; Valid = $true; CompletedUtc = '2026-10-29T14:42:52.6310000Z' })
+Assert-Equal (Test-ScanVerification $catalogCase $catalogSources $catalogHistory $catalogCase.ScanRequestBootUtc) 'CONFIRMED' 'Live pilot catalog 1536 to 1537 confirms with a newer valid completion'
 
 $folder = Join-Path $testRoot ('ServerValidationTests-' + [guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($folder)

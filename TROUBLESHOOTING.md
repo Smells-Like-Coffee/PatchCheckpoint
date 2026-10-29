@@ -63,9 +63,12 @@ Keep the existing tracking CSVs and session file.
 
 - PENDING: qualifying completion history has not advanced beyond the request and
   saved baseline. Wait and use Check pending verification again.
-- BOOT CHANGED or SOURCE CHANGED: the observed boot/source information differs
+- BOOT CHANGED or SOURCE CHANGED: the observed boot/source identity differs
   from the saved request. Review the comparison before deliberately beginning
   another verification cycle. The application will not silently submit a new scan.
+- A catalog version change on the same source does not require a new request in
+  1.0.1 or later. Current-version scan history must be valid and newer than the
+  original request and saved completion; older-version history remains pending.
 - EVIDENCE UNAVAILABLE: expected scan-history information is absent, unsupported,
   unreadable, or ambiguous. Review diagnostics and client-side SCCM logs.
 - REQUEST UNCONFIRMED: the scan response contained no usable acceptance code.

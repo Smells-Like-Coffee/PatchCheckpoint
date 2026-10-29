@@ -1,4 +1,19 @@
-# Patch Checkpoint 1.0.0 - 2026-10-28
+# Patch Checkpoint 1.0.1 - 2026-10-29
+
+## Changes from 1.0.0
+
+- Verification accepts valid scan history for the current catalog version on the
+  same source, provided completion is newer than the original request and baseline.
+- Source identity changes, boot changes, stale/invalid/mismatched scan history,
+  unstable observations and outstanding patch/reboot findings still prevent PASS.
+- Existing campaign state is retained; no scan resubmission or schema change.
+
+1.0.1 validation: 121 core/export assertions and 97 mocked remote assertions
+passed under Windows PowerShell 5.1. All PowerShell sources parsed successfully.
+The rebuilt 1.0.1 EXE passed its isolated synthetic GUI test, including bounded
+workers, automatic verification, report exports and campaign resume. The catalog
+refresh regression uses the live report's timestamps with an anonymized source ID.
+No live servers were contacted during validation. The executable remains unsigned.
 
 ## Changes from 0.9.0-beta.6
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.1 - 2026-10-29
+
+- Fixed verification remaining pending after an SCCM catalog version refresh on the
+  same source. Valid completion evidence for the current version can now confirm
+  the original request when newer than both the request and saved completion.
+- Retained source identity, boot, stable-observation, update and reboot safeguards.
+  No additional scans are submitted to resolve catalog version changes.
+- Existing campaigns and CSVs can be resumed without resetting their tracking.
+
 ## 1.0.0 - 2026-10-28
 
 - First owner-authorized 1.0 release; earlier 1.0.x tags remain historical test builds.

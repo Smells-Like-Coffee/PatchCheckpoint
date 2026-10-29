@@ -24,7 +24,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '1.0.0'
+$script:AppVersion = '1.0.1'
 $script:CompiledHost = $null -ne ('PatchCheckpoint.Program' -as [type])
 $script:ProjectRoot = if ($script:CompiledHost) { [PatchCheckpoint.Program]::RuntimeRoot } else { $PSScriptRoot }
 $script:DocumentationRoot = if ([IO.File]::Exists((Join-Path $script:ProjectRoot 'USER-GUIDE.md'))) { $script:ProjectRoot } else { [IO.Path]::GetDirectoryName($script:ProjectRoot) }

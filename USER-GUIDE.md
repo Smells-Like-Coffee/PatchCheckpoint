@@ -14,7 +14,7 @@ complete Windows update inventory or an application-health assessment.
 
 Download the packaged ZIP and matching checksum from this repository's **Releases**
 page, or clone the repository and keep the source files together. The current
-version is **1.0.0**, the first owner-authorized 1.0 release. Earlier 1.0.x tags were historical test-build labels. Existing owner-run live tests inform the workflow; the EXE still needs representative live and endpoint-security validation.
+version is **1.0.1**. Version 1.0.0 was the first owner-authorized 1.0 release. Earlier 1.0.x tags were historical test-build labels. Existing owner-run live tests inform the workflow; the EXE still needs representative live and endpoint-security validation.
 
 Use the ZIP matching the version in the application title. Older downloads are
 historical test artifacts.
@@ -381,8 +381,9 @@ Existing SCCM policies continue to operate independently and may react to new re
 
 The unfinished report carries the request time (target UTC), boot time, and per-source
 completion baseline. On a later wave, the tool requires all current update sources
-to have valid scan-history records, matching source versions, and completion times
-strictly later than both the request and previous completion. A boot or source change
+to have valid scan-history records matching each source's current version, and completion
+times strictly later than both the request and previous completion. A catalog version
+change on the same source is accepted when this newer evidence qualifies. A boot or source identity change
 keeps the existing request pending with an explicit reason instead of automatically
 replacing it. Review VerificationContextJson in the computer details or CSV before
 deliberately starting a new verification cycle. It records the loaded request,

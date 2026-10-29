@@ -7,9 +7,9 @@ monthly patch cycle, which need attention, and which are still waiting for scan
 verification. Keep the results together, resolve issues on the affected machines,
 and return for the next check.
 
-**Version 1.0.0** · Windows x64 · SCCM / Configuration Manager
+**Version 1.0.1** · Windows x64 · SCCM / Configuration Manager
 
-[Download for Windows](https://github.com/Smells-Like-Coffee/PatchCheckpoint/releases/tag/v1.0.0) · [User guide](USER-GUIDE.md) · [Troubleshooting](TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md)
+[Download for Windows](https://github.com/Smells-Like-Coffee/PatchCheckpoint/releases/latest) · [User guide](USER-GUIDE.md) · [Troubleshooting](TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md)
 
 ![Patch Checkpoint showing campaign setup, progress, and computer status](docs/images/patch-checkpoint.png)
 
@@ -26,7 +26,7 @@ and return for the next check.
 
 ## Get started
 
-1. Download and extract **PatchCheckpoint-1.0.0-Windows-x64.zip** from the release linked above.
+1. Download and extract the **Windows-x64.zip** package from the release linked above.
 2. Open **PatchCheckpoint.exe**. To explore with fictional data, launch it with `-Demo`.
 3. Select your input CSV and campaign folder, set credentials, and choose concurrency.
 4. Click **Start wave**. The initial assessment includes one automatic verification follow-up after a 60-second scan window.
@@ -79,7 +79,7 @@ exact scope, permissions, verification rules, and recovery instructions.
 
 All runnable sources, launchers, examples, tests and EXE build files live in
 **[app/](app/)**. Documentation stays at the repository root. Download the
-**PatchCheckpoint-1.0.0-Source.zip** package and run **app\\Launch.cmd**; use
+**Source.zip** package and run **app\\Launch.cmd**; use
 **app\\Demo.cmd** for the synthetic demo. The EXE embeds the application files and
 does not require the source package beside it. It still uses Windows PowerShell 5.1.
 

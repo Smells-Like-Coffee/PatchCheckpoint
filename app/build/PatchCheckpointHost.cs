@@ -18,8 +18,8 @@ using System.Management.Automation.Runspaces;
 [assembly: AssemblyTitle("Patch Checkpoint")]
 [assembly: AssemblyDescription("Windows OS/.NET patch and reboot verification")]
 [assembly: AssemblyProduct("Patch Checkpoint")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyFileVersion("1.0.1.0")]
 
 namespace PatchCheckpoint
 {

@@ -111,11 +111,19 @@ $oldSources = @($parsedSources)
 $oldSources[0].Version = '6'
 $changedSource.ScanBaselineJson = ConvertTo-Json -InputObject $oldSources -Compress
 $contextResult = & $remoteBlock $changedSource $helpers $options
-Assert-Equal $contextResult.Verification 'SOURCE CHANGED' 'Source mismatch reason is preserved'
+Assert-Equal $contextResult.Status 'PASS' 'Catalog version refresh accepts newer valid current-version evidence'
+Assert-Equal $contextResult.Verification 'CONFIRMED' 'Catalog refresh confirms the original request'
 Assert-Equal $contextResult.ScanRequestedAtUtc $changedSource.ScanRequestedAtUtc 'Source mismatch does not reset request timestamp'
 Assert-Equal $script:triggers $countBeforeContextCheck 'Source mismatch does not submit another scan'
 $context = $contextResult.VerificationContextJson | ConvertFrom-Json
 Assert-Equal $context.ObservedSources[0].Version '7' 'Diagnostic context records observed source version'
+$oldSources[0].Id = 'SOURCE-REPLACED'
+$changedSource.ScanBaselineJson = ConvertTo-Json -InputObject $oldSources -Compress
+$contextResult = & $remoteBlock $changedSource $helpers $options
+Assert-Equal $contextResult.Status 'VERIFICATION PENDING' 'Changed source identity remains pending'
+Assert-Equal $contextResult.Verification 'SOURCE CHANGED' 'Changed source identity remains explicit'
+Assert-Equal $contextResult.ScanRequestedAtUtc $changedSource.ScanRequestedAtUtc 'Changed source identity retains request boundary'
+Assert-Equal $script:triggers $countBeforeContextCheck 'Changed source identity does not submit another scan'
 
 $script:deployedRows = @(New-TestDeployedUpdate)
 $bad = & $remoteBlock $r $helpers $options
