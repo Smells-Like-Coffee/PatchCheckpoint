@@ -1,4 +1,19 @@
-# Patch Checkpoint 1.0.1 - 2026-10-29
+# Patch Checkpoint 1.0.2 - 2026-10-29
+
+## Changes from 1.0.1
+
+- Added the owner-approved, AI-generated checkpoint/checkmark identity.
+- Build-BrandAssets.ps1 converts the approved PNGs to a Windows ICO with
+  16/24/32/48/64/128/256-pixel frames and a 1280x640 GitHub social-preview JPEG.
+- The EXE embeds the ICO in its Windows resources and private runtime resources;
+  script mode loads the same icon from app/assets. The window owns and disposes it.
+- Patch assessment, report schemas and existing campaign tracking are unchanged.
+
+1.0.2 validation: all PowerShell sources parsed successfully. The rebuilt EXE
+passed its isolated synthetic GUI test, including the custom window icon, bounded
+workers, verification, exports and campaign resume. Explorer's embedded icon was
+extracted successfully, and the ICO contains seven size frames. Normal-exit
+runtime cleanup was verified. No live servers were contacted during these tests.
 
 ## Changes from 1.0.0
 

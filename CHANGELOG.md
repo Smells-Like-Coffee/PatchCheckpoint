@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2 - 2026-10-29
+
+- Applied the approved Patch Checkpoint branding to the EXE, window/taskbar icon,
+  and GitHub README. Added a repository social-preview image.
+- Included a multi-size Windows icon and a native asset-conversion build script.
+- Assessment behavior and campaign formats are unchanged from 1.0.1.
+
 ## 1.0.1 - 2026-10-29
 
 - Fixed verification remaining pending after an SCCM catalog version refresh on the

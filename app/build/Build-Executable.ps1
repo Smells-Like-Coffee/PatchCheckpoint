@@ -20,6 +20,11 @@ if ([IO.Path]::GetExtension($output) -ne '.exe') { throw 'OutputPath must end in
 [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($output))
 if ([IO.File]::Exists($output)) { throw 'Choose a new output filename; builds never replace an existing executable.' }
 $arguments = @('/nologo','/target:winexe','/platform:x64','/optimize+','/debug-',('/out:' + $output),('/reference:' + [PowerShell].Assembly.Location),'/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll')
+# Use the same reviewed icon for Explorer and the application's window/taskbar.
+$iconPath = Join-Path $appRoot 'assets\PatchCheckpoint.ico'
+if (-not [IO.File]::Exists($iconPath)) { throw 'Application icon is missing. Run build\Build-BrandAssets.ps1 first.' }
+$arguments += '/win32icon:' + $iconPath
+$arguments += '/resource:' + $iconPath + ',PatchCheckpoint.PatchCheckpoint.ico'
 # Older in-box compilers do not expose /deterministic. The reviewed source and
 # SHA256 manifest remain the reproducibility record for the distributed build.
 foreach ($name in @('Start-PatchCheckpoint.ps1','Validation.Core.ps1','Remote.Assessment.ps1','UI.Theme.ps1','UI.Commands.ps1','Diagnostics.Export.ps1','Computers.example.csv')) {

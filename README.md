@@ -1,5 +1,7 @@
 # Patch Checkpoint
 
+![Patch Checkpoint — Windows patch and reboot verification](docs/images/patch-checkpoint-social.jpg)
+
 **Windows patch and reboot verification, one campaign at a time.**
 
 Give Patch Checkpoint a CSV of Windows computers and see which have finished their
@@ -7,7 +9,7 @@ monthly patch cycle, which need attention, and which are still waiting for scan
 verification. Keep the results together, resolve issues on the affected machines,
 and return for the next check.
 
-**Version 1.0.1** · Windows x64 · SCCM / Configuration Manager
+**Version 1.0.2** · Windows x64 · SCCM / Configuration Manager
 
 [Download for Windows](https://github.com/Smells-Like-Coffee/PatchCheckpoint/releases/latest) · [User guide](USER-GUIDE.md) · [Troubleshooting](TROUBLESHOOTING.md) · [Release notes](CHANGELOG.md)
 

@@ -14,7 +14,7 @@ complete Windows update inventory or an application-health assessment.
 
 Download the packaged ZIP and matching checksum from this repository's **Releases**
 page, or clone the repository and keep the source files together. The current
-version is **1.0.1**. Version 1.0.0 was the first owner-authorized 1.0 release. Earlier 1.0.x tags were historical test-build labels. Existing owner-run live tests inform the workflow; the EXE still needs representative live and endpoint-security validation.
+version is **1.0.2**. Version 1.0.0 was the first owner-authorized 1.0 release. Earlier 1.0.x tags were historical test-build labels. Existing owner-run live tests inform the workflow; the EXE still needs representative live and endpoint-security validation.
 
 Use the ZIP matching the version in the application title. Older downloads are
 historical test artifacts.

@@ -24,7 +24,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '1.0.1'
+$script:AppVersion = '1.0.2'
 $script:CompiledHost = $null -ne ('PatchCheckpoint.Program' -as [type])
 $script:ProjectRoot = if ($script:CompiledHost) { [PatchCheckpoint.Program]::RuntimeRoot } else { $PSScriptRoot }
 $script:DocumentationRoot = if ([IO.File]::Exists((Join-Path $script:ProjectRoot 'USER-GUIDE.md'))) { $script:ProjectRoot } else { [IO.Path]::GetDirectoryName($script:ProjectRoot) }
@@ -642,6 +642,13 @@ function Invoke-AppTick {
 
 # Build a resizable, keyboard-accessible desktop layout using only built-in .NET.
 $script:form = [Windows.Forms.Form]::new()
+# Keep one owned icon alive for the window and taskbar, then dispose it on exit.
+$script:applicationIcon = $null
+$iconPath = if ($script:CompiledHost) { Join-Path $script:ProjectRoot 'PatchCheckpoint.ico' } else { Join-Path $script:ProjectRoot 'assets\PatchCheckpoint.ico' }
+if ([IO.File]::Exists($iconPath)) {
+    $script:applicationIcon = [Drawing.Icon]::new($iconPath)
+    $script:form.Icon = $script:applicationIcon
+}
 $script:form.Text = 'Patch Checkpoint ' + $script:AppVersion + $(if ($Demo) { ' [OFFLINE DEMO]' } else { '' })
 $script:form.ClientSize = [Drawing.Size]::new(1040,750); $script:form.MinimumSize = [Drawing.Size]::new(1056,789)
 $script:form.StartPosition = 'CenterScreen'; $script:form.Font = [Drawing.Font]::new('Segoe UI',10)
@@ -831,6 +838,7 @@ finally {
     Release-AppResources
     if ($script:app.Credential) { $script:app.Credential.Password.Dispose() }
     $script:binding.Dispose(); $script:table.Dispose(); $script:form.Dispose()
+    if ($script:applicationIcon) { $script:applicationIcon.Dispose() }
     $script:rowMenu.Dispose(); $script:menu.Dispose()
     $script:statusFont.Dispose()
     $script:toolTips.Dispose()

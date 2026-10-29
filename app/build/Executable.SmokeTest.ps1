@@ -15,7 +15,8 @@ function Invoke-ExecutableSmokeTest {
     $script:app.InitialVerificationDelaySeconds = 1
     $script:form.Show()
     try {
-        if ($script:AppVersion -ne '1.0.1' -or -not $script:CompiledHost -or $PSVersionTable.PSEdition -ne 'Desktop') { throw 'Incorrect compiled runtime or application version.' }
+        if ($script:AppVersion -ne '1.0.2' -or -not $script:CompiledHost -or $PSVersionTable.PSEdition -ne 'Desktop') { throw 'Incorrect compiled runtime or application version.' }
+        if (-not $script:applicationIcon -or $script:form.Icon -ne $script:applicationIcon) { throw 'Application branding icon was not loaded.' }
         if (-not [IO.Directory]::GetAccessControl($script:ProjectRoot).AreAccessRulesProtected) { throw 'Embedded resource directory must have a private ACL.' }
         if (@(Get-Command Invoke-Command,New-PSSessionOption -ErrorAction Stop).Count -ne 2) { throw 'Required WinRM client commands are unavailable in the compiled host.' }
         foreach ($topic in @('Guide','Troubleshooting','ReleaseNotes','About')) { if ((Get-AppHelpText $topic).Length -lt 100) { throw ('Missing embedded help: ' + $topic) } }
@@ -44,7 +45,7 @@ function Invoke-ExecutableSmokeTest {
             RuntimeRoot = $script:ProjectRoot; DataRoot = $script:DataRoot; TestFolder = $testFolder
             Finished = $script:app.Finished.Count; Unfinished = $script:app.Rows.Count
             ExcelExport = $export; DiagnosticExport = $diagnostic
-            Checks = @('Private runtime ACL','WinRM command availability','Embedded help','STA GUI','Bounded demo workers','Automatic verification','Excel export','Diagnostic ZIP','Campaign resume','Activity panel')
+            Checks = @('Application icon','Private runtime ACL','WinRM command availability','Embedded help','STA GUI','Bounded demo workers','Automatic verification','Excel export','Diagnostic ZIP','Campaign resume','Activity panel')
         }
         [IO.File]::WriteAllText($ExecutableTestReport,(ConvertTo-Json -InputObject $result -Depth 5))
     }
